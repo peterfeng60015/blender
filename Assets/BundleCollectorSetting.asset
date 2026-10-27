@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 185f6993d5150494d98da50e26cb1c25, type: 3}
+  m_Name: BundleCollectorSetting
+  m_EditorClassIdentifier: YooAsset.Editor::YooAsset.Editor.BundleCollectorSetting
+  ShowPackageView: 0
+  ShowEditorAlias: 0
+  UniqueBundleName: 0
+  Packages:
+  - PackageName: CodePackage
+    PackageDesc: "HybridCLR \u71B1\u66F4 dll\uFF08aot / project\uFF09\uFF0CArchiveFileBuildPipeline"
+    EnableAddressable: 1
+    SupportExtensionless: 0
+    LocationToLower: 0
+    IncludeAssetGUID: 0
+    AutoCollectShaders: 0
+    IgnoreRuleName: NormalIgnoreRule
+    Groups:
+    - GroupName: hybridclr_dll
+      GroupDesc: aot / project dll
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/DllBytes/AotDllBytes
+        CollectorGUID: 
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackCodePackageArchive
+        FilterRuleName: CollectAll
+        AssetTags: aot
+        UserData: 
+      - CollectPath: Assets/DllBytes/ProjectDllBytes
+        CollectorGUID: 
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackCodePackageArchive
+        FilterRuleName: CollectAll
+        AssetTags: project
+        UserData: 
