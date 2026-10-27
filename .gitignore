@@ -76,3 +76,7 @@ Assets/DllBytes.meta
 Assets/HybridCLRGenerate/
 Assets/HybridCLRGenerate.meta
 /HybridCLRData/*
+
+# 打包產物
+/ServerData/
+/Bundles/
