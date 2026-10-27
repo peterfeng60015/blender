@@ -69,3 +69,10 @@ crashlytics-build.properties
 
 # macOS
 .DS_Store
+
+# HybridCLRData
+Assets/DllBytes/
+Assets/DllBytes.meta
+Assets/HybridCLRGenerate/
+Assets/HybridCLRGenerate.meta
+/HybridCLRData/*
