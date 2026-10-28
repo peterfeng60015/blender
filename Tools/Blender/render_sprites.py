@@ -53,7 +53,7 @@ def parse_args():
     p.add_argument("--out", default="//SpriteOut", help="輸出資料夾；// 開頭表示相對 .blend 所在處")
     p.add_argument("--dirs", type=int, default=8, help="方向數（4、8 用羅盤命名，其他用角度）")
     p.add_argument("--size", type=int, default=128, help="每格像素（正方形）")
-    p.add_argument("--elevation", type=float, default=30.0, help="相機俯角（度），0＝正側面")
+    p.add_argument("--elevation", type=float, default=30.0, help="相機俯角（度），0＝正側面，90＝正俯視")
     p.add_argument("--ortho-scale", type=float, default=0.0, help="正交相機寬度（公尺），0＝自動")
     p.add_argument("--margin", type=float, default=1.1, help="自動取景時的留白倍率")
     p.add_argument("--step", type=int, default=1, help="每隔幾幀取一幀")
@@ -72,8 +72,8 @@ def parse_args():
         p.error("--size 至少 1")
     if args.step < 1:
         p.error("--step 至少 1")
-    if not -89.0 <= args.elevation <= 89.0:
-        p.error("--elevation 要在 -89～89 之間")
+    if not -90.0 <= args.elevation <= 90.0:
+        p.error("--elevation 要在 -90～90 之間（90＝正俯視，用於可平鋪的地板、可任意旋轉的子彈）")
     if not args.demo and not args.target:
         p.error("沒有 --demo 時必須給 --target")
     return args
