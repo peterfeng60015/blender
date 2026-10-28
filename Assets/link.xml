@@ -30,6 +30,14 @@
     <type fullname="UnityEngine.RectTransformUtility" preserve="all" />
   </assembly>
 
+  <!-- 3D 主角：Animator、AnimatorController 執行期、AnimationClip（模型與控制器只在資源包裡，build 的場景沒有引用）、
+       SkinnedMeshRenderer、MaterialPropertyBlock（受擊閃色） -->
+  <assembly fullname="UnityEngine.AnimationModule" preserve="all" />
+  <assembly fullname="UnityEngine.CoreModule">
+    <type fullname="UnityEngine.SkinnedMeshRenderer" preserve="all" />
+    <type fullname="UnityEngine.MaterialPropertyBlock" preserve="all" />
+  </assembly>
+
   <!-- 其他：AudioListener（遊戲相機）、Regex（sprite json 讀 fps） -->
   <assembly fullname="UnityEngine.AudioModule">
     <type fullname="UnityEngine.AudioListener" preserve="all" />

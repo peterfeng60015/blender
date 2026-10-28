@@ -48,6 +48,23 @@ namespace EntryScene
             return await GetLoader().LoadTextAsync(location);
         }
 
+        /// <summary>
+        /// 載入 3D 模型（FBX 匯入後的 GameObject，例如 <c>SsHero3D</c>）。回傳的是資產本身（常駐），
+        /// 呼叫端用 Instantiate 產生實例。刻意不提供泛型版：遊戲模組代碼在 AOT 端沒有對應的泛型實例。
+        /// </summary>
+        [Preserve]
+        public static async UniTask<GameObject> LoadModelAsync(string location)
+        {
+            return await GetLoader().LoadResidentAssetAsync<GameObject>(location);
+        }
+
+        /// <summary>載入動畫控制器（例如 <c>SsHero3D_Anim</c>），常駐。</summary>
+        [Preserve]
+        public static async UniTask<RuntimeAnimatorController> LoadAnimatorControllerAsync(string location)
+        {
+            return await GetLoader().LoadResidentAssetAsync<RuntimeAnimatorController>(location);
+        }
+
         /// <summary>由 EntrySceneController 在 AssetPackage 初始化與下載完成後掛上；重試前以 null 卸下。</summary>
         internal static void Attach(AssetPackageLoader loader)
         {

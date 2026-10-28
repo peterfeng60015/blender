@@ -17,7 +17,7 @@ namespace Sidescroller
         private Transform _worldRoot;
         private Rigidbody2D _rb;
         private CapsuleCollider2D _body;
-        private SpriteAnimator _anim;
+        private HeroVisual _anim;
         private PhysicsMaterial2D _material;
 
         private State _state = State.Normal;
@@ -96,7 +96,7 @@ namespace Sidescroller
             hero._body = body;
             hero.SetBallShape(false);
 
-            hero._anim = SpriteAnimator.Create(go, SsSorting.Hero);
+            hero._anim = HeroVisual.Create(go, SsSorting.Hero, session.Loadout.Costume);
             hero._anim.SetFacing(facing);
 
             hero._solidFilter = new ContactFilter2D { useTriggers = false };
@@ -454,7 +454,7 @@ namespace Sidescroller
                 return;
             _animAction = action;
             _animLoop = loop;
-            _anim.Play(SsArt.Get(HeroStats.SpritePrefix(_costume) + "_" + action), loop, true);
+            _anim.Play(action, loop, true);
         }
 
         private void UpdateAnimation()

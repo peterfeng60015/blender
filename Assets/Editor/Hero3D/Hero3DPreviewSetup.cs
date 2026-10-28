@@ -7,17 +7,20 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 
 /// <summary>
-/// 阿甲 3D（Tools/Blender/Hero3D/hero3d.py 匯出的 AhJia3D.fbx）在 Unity 的預覽設定，可重複執行：
+/// 阿甲 3D（Tools/Blender/Hero3D/hero3d.py 匯出的 AhJia3D.fbx，放進專案時改名 SsHero3D.fbx）在 Unity 的設定，可重複執行：
 ///   1. 材質 M_AhJiaToon（shader Sidescroller/AhJiaToon：頂點色＋3 階明暗＋描邊），並把 FBX 內的 M_AhJia 對應過去。
 ///   2. FBX 匯入設定：Generic 骨架、套用軸向轉換、動畫片段改成短名（Idle、Run…）、Idle／Run／Jump 循環。
-///   3. 動畫控制器 AhJiaPreview：依序輪播 6 個動作。
-///   4. 預覽場景 Hero3DPreview：3/4 視角與側面（遊戲視角）各一隻，按 Play 就會動。
-/// 只是美術預覽，不進 Build Settings、不進資源包；場景裡沒有任何遊戲模組（Assembly-CSharp）的元件。
+///   3. 遊戲用動畫控制器 SsHero3D_Anim：6 個狀態、沒有轉換，由 HeroVisual 用程式切換（和模型一起進資源包）。
+///   4. 預覽用動畫控制器 AhJiaPreview：依序輪播 6 個動作。
+///   5. 預覽場景 Hero3DPreview：3/4 視角與側面（遊戲視角）各一隻，按 Play 就會動（不進 Build Settings、不進資源包）。
+/// 模型、控制器、場景裡都沒有任何遊戲模組（Assembly-CSharp）的元件。
 /// </summary>
 public static class Hero3DPreviewSetup
 {
     private const string Folder = "Assets/Art/Hero3D";
-    private const string ModelPath = Folder + "/AhJia3D.fbx";
+    private const string ModelFolder = "Assets/Art/Sidescroller/Models/SsHero3D";
+    private const string ModelPath = ModelFolder + "/SsHero3D.fbx";
+    private const string GameControllerPath = ModelFolder + "/SsHero3D_Anim.controller";
     private const string ShaderName = "Sidescroller/AhJiaToon";
     private const string MaterialPath = Folder + "/M_AhJiaToon.mat";
     private const string ControllerPath = Folder + "/AhJiaPreview.controller";
@@ -32,7 +35,7 @@ public static class Hero3DPreviewSetup
 
     private static readonly HashSet<string> LoopingClips = new HashSet<string> { "Idle", "Run", "Jump" };
 
-    [MenuItem("Tools/Hero3D/建立預覽場景", false, 200)]
+    [MenuItem("Tools/Hero3D/設定模型與預覽場景", false, 200)]
     public static void SetupMenu()
     {
         if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
@@ -45,7 +48,9 @@ public static class Hero3DPreviewSetup
     {
         var material = SetupMaterial();
         SetupModelImporter(material);
-        var controller = SetupController(LoadClips());
+        var clips = LoadClips();
+        SetupGameController(clips);
+        var controller = SetupController(clips);
         BuildScene(controller);
     }
 
@@ -181,10 +186,35 @@ public static class Hero3DPreviewSetup
 
     #region 動畫控制器與場景
 
+    /// <summary>沿用既有的控制器（GUID 不變），清掉全部狀態；沒有就新建。</summary>
+    private static AnimatorController EmptyController(string path)
+    {
+        var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
+        if (controller == null)
+            return AnimatorController.CreateAnimatorControllerAtPath(path);
+        var machine = controller.layers[0].stateMachine;
+        foreach (var child in machine.states)
+            machine.RemoveState(child.state);
+        return controller;
+    }
+
+    /// <summary>遊戲用：每個動作一個同名狀態，沒有轉換（HeroVisual 用 Animator.Play／CrossFade 切換），預設 Idle。</summary>
+    private static void SetupGameController(Dictionary<string, AnimationClip> clips)
+    {
+        var machine = EmptyController(GameControllerPath).layers[0].stateMachine;
+        for (var i = 0; i < Sequence.Length; i++)
+        {
+            var state = machine.AddState(Sequence[i].Name, new Vector3(250f, 60f * i, 0f));
+            state.motion = clips[Sequence[i].Name];
+            if (i == 0)
+                machine.defaultState = state;
+        }
+        AssetDatabase.SaveAssets();
+    }
+
     private static AnimatorController SetupController(Dictionary<string, AnimationClip> clips)
     {
-        AssetDatabase.DeleteAsset(ControllerPath);
-        var controller = AnimatorController.CreateAnimatorControllerAtPath(ControllerPath);
+        var controller = EmptyController(ControllerPath);
         var machine = controller.layers[0].stateMachine;
         var states = new List<AnimatorState>();
         for (var i = 0; i < Sequence.Length; i++)

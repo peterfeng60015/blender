@@ -51,6 +51,9 @@ namespace EntryScene
         /// </summary>
         private readonly Dictionary<string, Sprite[]> _spriteCache = new Dictionary<string, Sprite[]>(StringComparer.Ordinal);
 
+        /// <summary>常駐的主資產（模型、動畫控制器），以 location 為鍵；handle 同樣刻意不釋放。</summary>
+        private readonly Dictionary<string, UnityEngine.Object> _assetCache = new Dictionary<string, UnityEngine.Object>(StringComparer.Ordinal);
+
         /// <summary>本次實際生效的內部版號（{bundleVersion}.{n}；Editor 模擬模式為 "Simulate"），供記錄與除錯。</summary>
         public string InternalVersion { get; private set; } = string.Empty;
 
@@ -311,6 +314,47 @@ namespace EntryScene
             return (Sprite[])sprites.Clone();
         }
 
+        /// <summary>
+        /// 載入一個要常駐的主資產（3D 模型、動畫控制器）。和 sprite 一樣 handle 不釋放，
+        /// 同一個 location 第二次起直接回傳快取；回傳的是資產本身，呼叫端用 Instantiate 產生實例。
+        /// </summary>
+        public async UniTask<T> LoadResidentAssetAsync<T>(string location) where T : UnityEngine.Object
+        {
+            EnsureInitialized();
+            if (string.IsNullOrEmpty(location))
+                throw new ArgumentException("location 不可為空", nameof(location));
+
+            if (_assetCache.TryGetValue(location, out var cached))
+                return cached as T ?? throw new Exception($"[AssetPackageLoader] {location} 不是 {typeof(T).Name}");
+
+            var handle = _package.LoadAssetAsync<T>(location);
+            try
+            {
+                await WaitAndThrowOnFailure(handle, $"載入 {typeof(T).Name} {location}");
+            }
+            catch
+            {
+                handle.Release();
+                ForgetFailedLoad(location);
+                throw;
+            }
+
+            if (_assetCache.TryGetValue(location, out cached))
+            {
+                handle.Release();
+                return cached as T ?? throw new Exception($"[AssetPackageLoader] {location} 不是 {typeof(T).Name}");
+            }
+
+            var asset = handle.GetAssetObject<T>();
+            if (asset == null)
+            {
+                handle.Release();
+                throw new Exception($"[AssetPackageLoader] {location} 不是 {typeof(T).Name}");
+            }
+            _assetCache[location] = asset;
+            return asset;
+        }
+
         /// <summary>載入 TextAsset 並回傳文字內容。字串已複製出來，handle 立即釋放。</summary>
         public async UniTask<string> LoadTextAsync(string location)
         {
@@ -427,6 +471,7 @@ namespace EntryScene
                 _package = null;
                 _downloader = null;
                 _spriteCache.Clear();
+                _assetCache.Clear();
                 InternalVersion = string.Empty;
             }
         }

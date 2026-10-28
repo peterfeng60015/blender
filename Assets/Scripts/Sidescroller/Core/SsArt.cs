@@ -18,6 +18,10 @@ namespace Sidescroller
     {
         public const string ArtRoot = "Assets/Art/Sidescroller";
         public const string DataRoot = ArtRoot + "/Data";
+        public const string ModelsRoot = ArtRoot + "/Models";
+        /// <summary>3D 主角的模型與動畫控制器（AssetPackage 的 location＝檔名）。</summary>
+        public const string HeroModelLocation = "SsHero3D";
+        public const string HeroAnimLocation = "SsHero3D_Anim";
 
         #region 素材清單（§6.4、design.md §8.3～8.5）
         private enum PivotKind { Feet, Center }
@@ -96,6 +100,11 @@ namespace Sidescroller
         public static bool IsLoaded { get; private set; }
         public static int PlaceholderCount { get; private set; }
 
+        /// <summary>3D 主角模型（資產本身，用 Instantiate 產生實例）；和 <see cref="HeroAnimController"/> 都有才用 3D，否則主角用 sprite。</summary>
+        public static GameObject HeroModel { get; private set; }
+        public static RuntimeAnimatorController HeroAnimController { get; private set; }
+        public static bool HasHero3D => HeroModel != null && HeroAnimController != null;
+
         #region 公開 API
         /// <summary>依 §6.4 的清單讀全部 sprite；讀不到的用佔位圖。重複呼叫只讀一次。</summary>
         public static async UniTask LoadAllAsync(CancellationToken ct)
@@ -141,8 +150,29 @@ namespace Sidescroller
                 }
             }
 
+            GameObject heroModel = null;
+            RuntimeAnimatorController heroAnim = null;
+            try
+            {
+                heroModel = await LoadHeroModelAsync(ready, ct);
+                heroAnim = await LoadHeroAnimAsync(ready, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // 舊版 App（Entry 還沒有 LoadModelAsync）會在這裡丟 MissingMethodException：照樣用 sprite 主角
+                Debug.LogWarning($"[Sidescroller.SsArt] 讀不到 3D 主角，改用 sprite：{ex.Message}");
+            }
+
             if (generation != _generation)
                 throw new OperationCanceledException("[Sidescroller.SsArt] 讀取中途被 ResetCache");
+            HeroModel = heroModel;
+            HeroAnimController = heroAnim;
+            if (!HasHero3D)
+                Debug.LogWarning("[Sidescroller.SsArt] 3D 主角素材不齊，主角用 sprite");
             foreach (var pair in loaded)
                 Cache[pair.Key] = pair.Value;
             PlaceholderCount = placeholders;
@@ -212,6 +242,8 @@ namespace Sidescroller
             Cache.Clear();
             IsLoaded = false;
             PlaceholderCount = 0;
+            HeroModel = null;
+            HeroAnimController = null;
             _warnedFallback = false;
             foreach (var obj in PlaceholderObjects)
             {
@@ -313,6 +345,69 @@ namespace Sidescroller
 #endif
             if (packageError != null)
                 Debug.LogWarning($"[Sidescroller.SsArt] 讀不到 {location}，改用佔位圖：{packageError.Message}");
+            return null;
+        }
+
+        /// <summary>讀不到回 null。Editor 下 AssetPackage 讀不到時改讀 <see cref="ModelsRoot"/> 底下的檔。</summary>
+        private static async UniTask<GameObject> LoadHeroModelAsync(bool ready, CancellationToken ct)
+        {
+            if (ready)
+            {
+                try
+                {
+                    var model = await EntryScene.GameAssets.LoadModelAsync(HeroModelLocation);
+                    ct.ThrowIfCancellationRequested();
+                    return model;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Sidescroller.SsArt] AssetPackage 讀不到 {HeroModelLocation}：{ex.Message}");
+                }
+            }
+#if UNITY_EDITOR
+            var path = $"{ModelsRoot}/{HeroModelLocation}/{HeroModelLocation}.fbx";
+            var editorModel = UnityEditor.AssetDatabase.LoadAssetAtPath(path, typeof(GameObject)) as GameObject;
+            if (editorModel != null)
+            {
+                WarnFallback();
+                return editorModel;
+            }
+#endif
+            return null;
+        }
+
+        private static async UniTask<RuntimeAnimatorController> LoadHeroAnimAsync(bool ready, CancellationToken ct)
+        {
+            if (ready)
+            {
+                try
+                {
+                    var controller = await EntryScene.GameAssets.LoadAnimatorControllerAsync(HeroAnimLocation);
+                    ct.ThrowIfCancellationRequested();
+                    return controller;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Sidescroller.SsArt] AssetPackage 讀不到 {HeroAnimLocation}：{ex.Message}");
+                }
+            }
+#if UNITY_EDITOR
+            var path = $"{ModelsRoot}/{HeroModelLocation}/{HeroAnimLocation}.controller";
+            var editorController = UnityEditor.AssetDatabase.LoadAssetAtPath(path, typeof(RuntimeAnimatorController)) as RuntimeAnimatorController;
+            if (editorController != null)
+            {
+                WarnFallback();
+                return editorController;
+            }
+#endif
             return null;
         }
 

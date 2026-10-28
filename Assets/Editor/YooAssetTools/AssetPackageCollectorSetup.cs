@@ -8,12 +8,13 @@ using YooAsset.Editor;
 /// 以程式建立/更新 YooAsset 的 AssetPackage（美術素材與資料）收集器設定。
 /// 寫法與理由同 <see cref="CodePackageCollectorSetup"/>：走 API 不手寫 YAML、可重複執行、不寫 CollectorGUID。
 ///
-/// 同一個 package（<see cref="PackageName"/>，GameAssets 只認這個）底下兩個 group，規則都相同：
+/// 同一個 package（<see cref="PackageName"/>，GameAssets 只認這個）底下三個 group，規則都相同：
 ///   - sidescroller_sprites：Assets/Art/Sidescroller/Sprites（熱浪急件的 sprite sheet）。
 ///   - sidescroller_data：Assets/Art/Sidescroller/Data（演出腳本、關卡資料；Cutscenes、Levels 各一包）。
+///   - sidescroller_models：Assets/Art/Sidescroller/Models（3D 模型與動畫控制器；材質、shader 跟著依賴收進去）。
 ///   - PackTopDirectory：底下每個子資料夾一包（SsHeroDay、Cutscenes…），改一個只會重下那一包。
 ///   - AddressByFileName：定位地址＝檔名不含副檔名（SsHeroDay_Run、SsHeroDay_Run_n、SsLevel_Stage1）。
-///   - CollectAll：png（主圖與法線圖 _n，各自是獨立的 sprite 貼圖）、json、txt 都收。
+///   - CollectAll：png（主圖與法線圖 _n，各自是獨立的 sprite 貼圖）、json、txt、fbx、controller 都收。
 ///
 /// 收集路徑不存在時照樣寫入設定（打包時再報錯）；標為 <see cref="GroupSpec.Optional"/> 的 group 則警告並略過。
 /// Editor 模擬模式讀的是已存檔的設定，不會自動重跑；收集路徑變動後要重跑一次選單（打包則每次自動跑）。
@@ -35,6 +36,7 @@ public static class AssetPackageCollectorSetup
 
     public const string SidescrollerSpritesCollectPath = "Assets/Art/Sidescroller/Sprites";
     public const string SidescrollerDataCollectPath = "Assets/Art/Sidescroller/Data";
+    public const string SidescrollerModelsCollectPath = "Assets/Art/Sidescroller/Models";
 
     // 與 CodePackageCollectorSetup 同一份設定檔（專案內只能有一份）。
     private const string SettingAssetPath = "Assets/BundleCollectorSetting.asset";
@@ -76,6 +78,15 @@ public static class AssetPackageCollectorSetup
             CollectPath = SidescrollerDataCollectPath,
             Optional = false,
             RequiredFilePrefix = "Ss",
+        },
+        new GroupSpec
+        {
+            GroupName = "sidescroller_models",
+            GroupDesc = "每個 <Name> 子資料夾一包（Ss 開頭；3D 模型與動畫控制器）",
+            CollectPath = SidescrollerModelsCollectPath,
+            Optional = false,
+            RequiredFilePrefix = "Ss",
+            FolderNeedsPrefix = true,
         },
     };
 
@@ -130,7 +141,7 @@ public static class AssetPackageCollectorSetup
         var package = new BundleCollectorPackage
         {
             PackageName = PackageName,
-            PackageDesc = "Sidescroller 美術素材與資料（sprite sheet、法線圖、json、txt），ScriptableBuildPipeline",
+            PackageDesc = "Sidescroller 美術素材與資料（sprite sheet、法線圖、json、txt、3D 模型），ScriptableBuildPipeline",
             EnableAddressable = true,
             SupportExtensionless = false,
             LocationToLower = false,

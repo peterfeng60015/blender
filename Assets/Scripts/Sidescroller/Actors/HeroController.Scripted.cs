@@ -74,7 +74,7 @@ namespace Sidescroller
         }
 
         public float GetActionDuration(string action) =>
-            IsAction(action) ? SsArt.Get(HeroStats.SpritePrefix(_costume) + "_" + action).Duration : 0f;
+            IsAction(action) ? _anim.Duration(action) : 0f;
 
         private static bool IsAction(string action) => System.Array.IndexOf(Actions, action) >= 0;
 

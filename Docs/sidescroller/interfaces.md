@@ -557,6 +557,7 @@ sprite 名稱＝`<Name>_<Action>_<編號>`，編號＝第幾幀（單列）。`S
 |---|---|---|---|---|---|
 | `sidescroller_sprites` | `Assets/Art/Sidescroller/Sprites` | PackTopDirectory | AddressByFileName | CollectAll | 每個 `<Name>` 一包，改一個角色只重下那一包 |
 | `sidescroller_data` | `Assets/Art/Sidescroller/Data` | PackTopDirectory | AddressByFileName | CollectAll | `Cutscenes`、`Levels` 各一包，改劇本只重下演出包 |
+| `sidescroller_models`（2026-10-29） | `Assets/Art/Sidescroller/Models` | PackTopDirectory | AddressByFileName | CollectAll | 每個 `<Name>` 一包（目前只有 `SsHero3D`：模型＋動畫控制器），見 §7.7 |
 
 - 收集路徑不存在時照樣寫入設定，打包時報錯（刪除《螢火礦坑》後兩個 group 都改成必要；原本「不存在就略過」是為了讓 Glowshaft 照樣能打包）。
 - 打包前檢查擴大到新的根目錄：根目錄不放檔案、子資料夾名不含 `.`、全 package 檔名唯一、Sidescroller 的檔名都以 `Ss` 開頭；略過以 `.` 開頭或 `~` 結尾的檔案與資料夾（art 的 `.staging/`）。
@@ -689,10 +690,21 @@ public static void Run()
 - 出包：`Tools/WebGL/一鍵出 WebGL 包`（`WebGLBuildTool.OneClickBuildWebGL`），必須在 active target＝WebGL 下出；本機跑 `Tools/WebGL/serve.py`。
 - 遊戲模組代碼不需要為 WebGL 改動。詳細的部署注意事項見看板 `handoff-webgl.md`。
 
+### 7.7 3D 主角（2026-10-29 加入）
+
+使用者決定主角改用 3D 模型（其他角色仍是 sprite）。
+
+- **素材**：`Assets/Art/Sidescroller/Models/SsHero3D/`，`SsHero3D.fbx`（Blender `Tools/Blender/Hero3D/hero3d.py` 匯出的 `AhJia3D.fbx` 改名放進來）與遊戲用動畫控制器 `SsHero3D_Anim.controller`（6 個同名狀態、沒有轉換）。收進 AssetPackage 的 `sidescroller_models` group；材質 `M_AhJiaToon` 與 shader `Sidescroller/AhJiaToon`（`Assets/Art/Hero3D/`）跟著依賴收進去。
+- **更新模型**：重跑 Blender 腳本 → 把 `AhJia3D.fbx` 覆蓋成 `SsHero3D.fbx` → Unity 選單 **Tools → Hero3D → 設定模型與預覽場景**（匯入設定、兩個控制器、預覽場景 `Assets/Art/Hero3D/Hero3DPreview.unity`）。
+- **載入**：`GameAssets.LoadModelAsync`／`LoadAnimatorControllerAsync`（Entry 端，非泛型、常駐不釋放）。`SsArt.LoadAllAsync` 一併讀進 `SsArt.HeroModel`／`HeroAnimController`；Editor 讀不到時改讀檔案，兩者不齊（或 App 是舊版、Entry 沒有這兩個方法）就照舊用 sprite 主角。
+- **顯示**：`HeroVisual`（`Actors/`）包住兩種外觀，`HeroController` 只呼叫它。3D 時模型面向右轉 yaw −70°、面向左 +70°（比正側面多轉向鏡頭一點），放大 1.3 倍；受擊閃色改 `_Tint`、無敵閃爍改成整隻隱藏顯示；動作播完與否用自己的計時判斷。目前只有日班制服的模型，特急制服也用同一隻。
+- **出包**：Entry（AOT）多了方法、`link.xml` 多保留 AnimationModule 與 SkinnedMeshRenderer，**WebGL／Android 要整包重出**才會有 3D 主角；舊版 App 只更新代碼包時會自動退回 sprite 主角。
+- **驗證**：`Hero3DPlayCapture.RunBatch`（batchmode，見檔頭）從 Entry 進 Play、叫主角播各動作並拍遊戲相機。
+
 ## 8. HybridCLR 與 AOT 泛型（各角色寫程式時遵守，新用到的列進交接檔）
 
 - 場景與資源包**不序列化引用** Assembly-CSharp 型別：所有物件 `new GameObject`＋`AddComponent`；不用 Timeline、不用 prefab、不用 ScriptableObject 資產。
-- 素材與資料只用 `Sprite`、`Texture2D`、`TextAsset`，透過 `SsArt`（內部用 `EntryScene.GameAssets`）讀；**禁止 `using YooAsset`**。
+- 素材與資料只用 `Sprite`、`Texture2D`、`TextAsset`，以及 3D 主角的模型（`GameObject`）與動畫控制器（`RuntimeAnimatorController`），透過 `SsArt`（內部用 `EntryScene.GameAssets`）讀；**禁止 `using YooAsset`**。（2026-10-29 加入 3D，見 §7.7）
 - **避開值型別泛型的新實例化**：不用 `HashSet<enum>`、`Dictionary<enum, …>`、`Dictionary<…, struct>`、ValueTuple、`List<自訂 struct>`；改用陣列（以 `(int)enum` 當索引）、`List<參考型別>`、`Dictionary<string, 參考型別>`。
 - Input System：只讀 `isPressed`／`wasPressedThisFrame`，不呼叫 `ReadValue<T>()`（Glowshaft 交接記錄過 `InputControl<Vector2>.ReadValue` 不在補充元數據清單）。
 - 已知會出現、要協調確認補充元數據的：`Action<int, int>`（Glowshaft 已用過）、`UniTask<bool>`、`UniTask<string>` 與 Assembly-CSharp 裡的 `async UniTask` 狀態機（Glowshaft 已用過 `async UniTask`）、`Action<string, bool>`、`Action<bool>`、`Action<float>`、`Action<TriggerInfo>`、`Resources.FindObjectsOfTypeAll<TMP_FontAsset>()`、`GetComponentInParent<ActorTag>()`／`<IDamageable>()`（參考型別，風險低）。

@@ -144,15 +144,14 @@ namespace Sidescroller
                 _switchReadyAt = Time.time + HeroStats.CostumeSwitchCooldown;
         }
 
-        /// <summary>按 C 或演出 grant 換上新服裝：換 sheet 但保留播放時間（兩套幀數一致，動畫不中斷）。</summary>
+        /// <summary>按 C 或演出 grant 換上新服裝：換外觀但動畫不中斷（sprite 換 sheet 保留播放時間；3D 目前同一隻），並閃一下。</summary>
         private void OnLoadoutChanged()
         {
             var costume = _session.Loadout.Costume;
             if (costume == _costume)
                 return;
             _costume = costume;
-            if (_animAction != null)
-                _anim.Swap(SsArt.Get(HeroStats.SpritePrefix(costume) + "_" + (_actionOverride ?? _animAction)));
+            _anim.SetCostume(costume);
             _anim.Flash(new Color(1f, 1f, 0.6f), 0.12f);
         }
         #endregion
