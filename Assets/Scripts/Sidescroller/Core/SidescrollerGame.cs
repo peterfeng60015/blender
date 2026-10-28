@@ -34,6 +34,9 @@ namespace Sidescroller
 
             ResetStatics();
             Time.timeScale = 1f;
+            // 原生 Android 預設鎖 30fps，動作手感差；WebGL 交給瀏覽器 rAF，桌機與 Editor 不動。重複設定無害
+            if (Application.platform == RuntimePlatform.Android)
+                Application.targetFrameRate = 60;
 
             var previous = SceneManager.GetActiveScene();
             _entryScene = previous;

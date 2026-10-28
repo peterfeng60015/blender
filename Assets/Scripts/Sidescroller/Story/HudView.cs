@@ -8,7 +8,8 @@ namespace Sidescroller
     /// <summary>
     /// HUD（interfaces.md §4.3）：左上心與已取得的攻擊、目前服裝、「C 換制服」；上方中央提示文字（演出中隱藏）；
     /// 下方中央 Boss 血條（血量 ≤ 一半＝第 2 階段變紅）。圖示用 <c>SsUi_Idle</c> 的變化（design.md §8.4）。
-    /// 由 <see cref="StoryUi"/> 訂閱 session 事件後呼叫各 Refresh。
+    /// 由 <see cref="StoryUi"/> 訂閱 session 事件後呼叫各 Refresh，每幀呼叫 <see cref="Tick"/>。
+    /// 整個 HUD 放在 <see cref="Screen.safeArea"/> 內（避開瀏海與圓角）；觸控模式時提示文字換成觸控版。
     /// </summary>
     public sealed class HudView
     {
@@ -39,6 +40,7 @@ namespace Sidescroller
             _session = session;
             _icons = SsArt.Get(UiLocation);
             _root = SsUiKit.Fill("Hud", parent);
+            SsUiKit.FitSafeArea(_root);
 
             #region 左上：心、攻擊、服裝
             _hearts = SsUiKit.Rect("Hearts", _root, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
@@ -100,6 +102,16 @@ namespace Sidescroller
             RefreshBoss();
         }
 
+        /// <summary>每幀：跟上安全區域、依輸入裝置切換文字、更新提示。</summary>
+        public void Tick()
+        {
+            SsUiKit.FitSafeArea(_root);
+            var switchText = SsInput.TouchActive ? StoryTexts.SwitchCostumeTouch : StoryTexts.SwitchCostume;
+            if (_switchHint.text != switchText)
+                _switchHint.text = switchText;
+            RefreshHint();
+        }
+
         public void SetVisible(bool visible)
         {
             if (_root.gameObject.activeSelf != visible)
@@ -144,10 +156,10 @@ namespace Sidescroller
             _switchHint.gameObject.SetActive(loadout.CostumeCount > 1);
         }
 
-        /// <summary>提示文字；演出中隱藏（StoryUi 每幀依 CutsceneActive 呼叫）。</summary>
+        /// <summary>提示文字；演出中隱藏（StoryUi 每幀經 <see cref="Tick"/> 呼叫）。觸控模式時換成觸控版。</summary>
         public void RefreshHint()
         {
-            var text = _session.Hint;
+            var text = StoryTexts.ForInput(_session.Hint, SsInput.TouchActive);
             var show = !string.IsNullOrEmpty(text) && !_session.CutsceneActive;
             if (show && _hintText.text != text)
                 _hintText.text = text;

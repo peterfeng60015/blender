@@ -26,6 +26,7 @@ namespace Sidescroller
         private readonly TextMeshProUGUI _name;
         private readonly TextMeshProUGUI _text;
         private readonly TextMeshProUGUI _next;
+        private readonly TextMeshProUGUI _help;
         private float _blink;
 
         public bool Visible => _root.gameObject.activeSelf;
@@ -90,8 +91,8 @@ namespace Sidescroller
             var helpRt = SsUiKit.Rect("Help", panel, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f));
             helpRt.anchoredPosition = new Vector2(-82f, 12f);
             helpRt.sizeDelta = new Vector2(640f, 36f);
-            var help = SsUiKit.AddText(helpRt, font, 22f, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.BottomRight);
-            help.text = StoryTexts.DialogueHelp;
+            _help = SsUiKit.AddText(helpRt, font, 22f, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.BottomRight);
+            _help.text = StoryTexts.DialogueHelp;
 
             _nameplate = SsUiKit.Rect("Nameplate", panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 0.5f));
             _nameplate.sizeDelta = new Vector2(240f, 62f);
@@ -172,9 +173,15 @@ namespace Sidescroller
                 _root.gameObject.SetActive(false);
         }
 
-        /// <summary>▼ 上下跳動（unscaled，暫停中也動）。</summary>
+        /// <summary>操作說明依輸入裝置切換；▼ 上下跳動（unscaled，暫停中也動）。</summary>
         public void Tick(float unscaledDt)
         {
+            if (_root.gameObject.activeSelf)
+            {
+                var help = SsInput.TouchActive ? StoryTexts.DialogueHelpTouch : StoryTexts.DialogueHelp;
+                if (_help.text != help)
+                    _help.text = help;
+            }
             if (!_next.gameObject.activeSelf)
                 return;
             _blink += unscaledDt;

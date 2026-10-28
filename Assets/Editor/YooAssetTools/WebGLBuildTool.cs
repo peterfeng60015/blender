@@ -79,23 +79,45 @@ public static class WebGLBuildTool
 
     #region Player Settings
 
+    /// <summary>手機版範本，在 Assets/WebGLTemplates/MobileLandscape（PROJECT: 表示專案內的範本）。</summary>
+    private const string WebGLTemplate = "PROJECT:MobileLandscape";
+
     /// <summary>
     /// 只改 WebGL 專屬的設定（ProjectSettings 的 WebGL 區段），其他平台不受影響。
-    /// - 壓縮 Disabled：本機用簡單的 http 伺服器（Tools/WebGL/serve.py）就能跑，不必設 Content-Encoding。
-    ///   正式上線想省流量時改 Brotli／Gzip，並由伺服器正確回 Content-Encoding（見交接檔）。
+    /// - 範本 MobileLandscape：手機滿版、禁止縮放與捲動、第一次點擊進全螢幕並鎖橫向；桌機維持 Default 範本的版面。
+    /// - 壓縮 Gzip＋Decompression Fallback：檔案約小一半以上（手機網路差很多），而且任何靜態主機都能跑——
+    ///   伺服器有回 Content-Encoding: gzip 時由瀏覽器原生解壓，沒有時由載入器用 JS 解壓（較慢，但不會壞）。
+    ///   不用 Brotli：瀏覽器只在 HTTPS 才解 br，區網 http 實測手機會落到 JS 解壓，而 JS 解 Brotli 很慢。
+    ///   Tools/WebGL/serve.py 會對 gzip 內容的 .unityweb 回 Content-Encoding。
+    /// - 資料快取開：.data 存進 IndexedDB，第二次開頁不必整包重抓。
+    /// - 記憶體：起始 InitialMemoryMB、上限 2048、幾何成長。理由見 InitialMemoryMB。
     /// - 不開多執行緒：需要 SharedArrayBuffer（COOP／COEP 標頭），一般主機與 GCS 預設都沒有；
     ///   HybridCLR 與 YooAsset 的 Web 流程也不需要。
     /// - Scripting backend：WebGL 只有 IL2CPP，HybridCLR 的 CheckSettings 也會檢查。
     /// </summary>
     public static void ApplyWebGLPlayerSettings()
     {
-        PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
-        PlayerSettings.WebGL.decompressionFallback = false;
+        PlayerSettings.WebGL.template = WebGLTemplate;
+        PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
+        PlayerSettings.WebGL.decompressionFallback = true;
+        PlayerSettings.WebGL.dataCaching = true;
+        PlayerSettings.WebGL.initialMemorySize = InitialMemoryMB;
+        PlayerSettings.WebGL.maximumMemorySize = 2048;
+        PlayerSettings.WebGL.memoryGrowthMode = WebGLMemoryGrowthMode.Geometric;
         PlayerSettings.WebGL.threadsSupport = false;
         PlayerSettings.SetScriptingBackend(UnityEditor.Build.NamedBuildTarget.WebGL, ScriptingImplementation.IL2CPP);
         AssetDatabase.SaveAssets();
-        Debug.Log("[WebGLBuildTool] 已套用 WebGL Player Settings：壓縮 Disabled、不開多執行緒、IL2CPP");
+        Debug.Log($"[WebGLBuildTool] 已套用 WebGL Player Settings：範本 {WebGLTemplate}、壓縮 Gzip（含 fallback）、" +
+                  $"資料快取、起始記憶體 {InitialMemoryMB} MB、不開多執行緒、IL2CPP");
     }
+
+    /// <summary>
+    /// WebGL 起始記憶體（MB）。實測（2026-10-28，起始 32 MB）：開到選單約 138 MB，進《熱浪急件》開場與關卡後
+    /// 長到約 199 MB 並維持。起始直接給 256 MB，開場不必一路成長：每次成長都要重新配置 wasm 記憶體，
+    /// 手機上既慢又可能因為瞬間要新舊兩份而配置失敗。上限 2048 只是位址空間上限，不會預先佔用。
+    /// 之後內容變多、實測超過時再往上調。
+    /// </summary>
+    private const int InitialMemoryMB = 256;
 
     #endregion
 

@@ -215,12 +215,20 @@ namespace Sidescroller
                     var arg = tokens[6].Trim();
                     var where = $"{name} 第 {i + 1} 行（{tokens[1]}）";
                     if (kind == "hint")
+                    {
                         texts.Add(where + "\u0001" + arg);
+                        if (MentionsKeys(arg) && StoryTexts.ForInput(arg, true) == arg)
+                            problems.Add($"{where}：提示「{arg}」寫了鍵盤按鍵，但 StoryTexts 沒有對應的觸控版（手機上會照原文顯示）");
+                    }
                     else if (kind == "cutscene" || kind == "bossArena")
                         cutsceneRefs.Add(where + "\u0001" + StripComment(arg));
                 }
             }
         }
+
+        /// <summary>提示裡有按鍵名（Space、Enter、Shift、Esc，或前後不接英文字母的單一大寫字母，例如 A／D、J：）；BOSS 這類單字不算。</summary>
+        private static bool MentionsKeys(string text) =>
+            System.Text.RegularExpressions.Regex.IsMatch(text, "(?<![A-Za-z])(Space|Enter|Shift|Esc|[A-Z])(?![A-Za-z])");
 
         private static string StripComment(string line)
         {

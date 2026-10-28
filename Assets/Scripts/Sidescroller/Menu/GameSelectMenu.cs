@@ -37,7 +37,11 @@ namespace Sidescroller
             _font = null;
             _fontSearched = false;
             SidescrollerGame.ResetStatics();
+            SsTouch.ForgetDevice();
             Time.timeScale = 1f;
+            // 原生 Android 預設鎖 30fps：每次開機都經過這裡，選單也跑 60（SidescrollerGame.Boot 也設，重複無害）；其他平台不動
+            if (Application.platform == RuntimePlatform.Android)
+                Application.targetFrameRate = 60;
             _entryScene = SceneManager.GetActiveScene();
 
             try

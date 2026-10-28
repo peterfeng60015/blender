@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <!-- 禁止縮放；viewport-fit=cover 讓背景蓋到瀏海兩側，畫布由 style.css 內縮到安全區域（WebGL 的 Screen.safeArea 恆為整個畫布） -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <title>{{{ PRODUCT_NAME }}}</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+#if SHOW_DIAGNOSTICS
+    <link rel="stylesheet" href="<<<TemplateData/diagnostics.css>>>">
+    <script src="<<<TemplateData/diagnostics.js>>>"></script>
+#endif
+#if DEVELOPMENT_PLAYER
+    <script src="<<<TemplateData/profiler.js>>>"></script>
+#endif
+    <script>
+      // 在畫面出來前決定版面，避免桌機／手機樣式閃一下。
+      // iPadOS 的 Safari 會假裝成 Mac，所以再看「多點觸控＋主要指標是手指」。
+      (function () {
+        var ua = navigator.userAgent;
+        var coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+        var isMobile = /iPhone|iPad|iPod|Android/i.test(ua) || (navigator.maxTouchPoints > 1 && coarse);
+        var root = document.documentElement;
+        root.className = isMobile ? "is-mobile" : "is-desktop";
+        var isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+        var standalone = navigator.standalone === true ||
+          (window.matchMedia && window.matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches);
+        // iPad 的 Safari 支援元素全螢幕，提示只給不能全螢幕的（iPhone）
+        var fsSupported = !!(root.requestFullscreen || root.webkitRequestFullscreen) &&
+                          !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+        if (isMobile && isIOS && !standalone && !fsSupported) root.classList.add("is-ios-browser");
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="unity-container">
+      <canvas id="unity-canvas" width={{{ WIDTH }}} height={{{ HEIGHT }}} tabindex="-1"></canvas>
+      <div id="loading">
+        <div id="loading-title">{{{ PRODUCT_NAME }}}</div>
+        <div id="loading-bar"><div id="loading-bar-full"></div></div>
+        <div id="loading-text">載入中 0%</div>
+        <div id="hint-portrait" class="loading-hint">建議把手機轉成橫向遊玩</div>
+        <div id="hint-ios" class="loading-hint">iPhone 的 Safari 不支援全螢幕，可用「分享 → 加入主畫面」從主畫面開啟，畫面會更大</div>
+        <div id="loading-error"></div>
+        <button id="loading-reload" type="button">重新整理</button>
+      </div>
+      <div id="unity-warning"></div>
+      <div id="unity-footer">
+        <div id="unity-build-title">{{{ PRODUCT_NAME }}}</div>
+        <div id="unity-footer-buttons">
+#if SHOW_DIAGNOSTICS
+          <img id="diagnostics-icon" src="TemplateData/webmemd-icon.png" alt="診斷">
+#endif
+          <button id="unity-fullscreen-button" type="button" title="全螢幕">⛶ 全螢幕</button>
+        </div>
+      </div>
+    </div>
+    <button id="mobile-fullscreen-button" type="button" aria-label="全螢幕"><span class="fs-icon">⛶</span><span class="fs-label"> 全螢幕</span></button>
+    <script>
+      var root = document.documentElement;
+      var isMobile = root.classList.contains("is-mobile");
+      var canvas = document.querySelector("#unity-canvas");
+      var loading = document.querySelector("#loading");
+
+      // 手機的畫布解析度上限：手機 DPR 常是 3，滿版橫向會到 2500×1170 以上，GPU 填充率吃不消、也更耗電。
+      // 上限 2 時約 1700～1900×800～860，和遊戲的參考解析度 1920×1080 同一級，畫面仍清楚。
+      // 測試用：網址加 ?dpr=1.5 可以臨時改上限（0.5～4）。桌機不設，維持瀏覽器原生的 DPR。
+      var MOBILE_MAX_DPR = 2;
+      function mobileDevicePixelRatio() {
+        var cap = MOBILE_MAX_DPR;
+        var q = parseFloat(new URLSearchParams(location.search).get("dpr"));
+        if (q >= 0.5 && q <= 4) cap = q;
+        return Math.min(window.devicePixelRatio || 1, cap);
+      }
+
+      // Unity 的訊息裡會夾 <br>、<a>：換行保留、其餘標籤拿掉，再用 textContent 顯示，不把訊息當 HTML。
+      function plainText(msg) {
+        return String(msg).replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
+      }
+
+      // Unity 的警告／錯誤橫幅（同 Default 範本，改成純文字顯示）。
+      function unityShowBanner(msg, type) {
+        var banner = document.querySelector("#unity-warning");
+        function updateBannerVisibility() {
+          banner.style.display = banner.children.length ? "block" : "none";
+        }
+        var div = document.createElement("div");
+        div.textContent = plainText(msg);
+        banner.appendChild(div);
+        if (type == "error") div.style.background = "#f88";
+        else {
+          if (type == "warning") div.style.background = "#ff8";
+          setTimeout(function () {
+            banner.removeChild(div);
+            updateBannerVisibility();
+          }, 5000);
+        }
+        updateBannerVisibility();
+      }
+
+      function showLoadError(message) {
+        loading.style.display = "";
+        loading.classList.add("is-error");
+        document.querySelector("#loading-text").textContent = "載入失敗";
+        document.querySelector("#loading-error").textContent = plainText(message);
+      }
+      document.querySelector("#loading-reload").onclick = function () { location.reload(); };
+
+      // 全螢幕與方向鎖（手機）
+      // 玩家第一次點擊（使用者手勢）時進全螢幕，進去之後再鎖橫向：
+      // Android Chrome 的 screen.orientation.lock 必須在全螢幕中才會成功；
+      // iPhone 的 Safari 沒有元素全螢幕、也沒有 orientation.lock，全部失敗都吞掉，不影響遊戲。
+      // 請求被拒（瀏覽器不認這個手勢）時下一次點擊再試，直到真的進過一次全螢幕為止；
+      // 之後玩家自己退出全螢幕（返回手勢）就不再自動進入，改由頂端的「全螢幕」按鈕重新進入。
+      function fullscreenElement() {
+        return document.fullscreenElement || document.webkitFullscreenElement || null;
+      }
+      function canFullscreen() {
+        var el = document.documentElement;
+        return !!(el.requestFullscreen || el.webkitRequestFullscreen) &&
+               !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+      }
+      function lockLandscape() {
+        try {
+          if (screen.orientation && screen.orientation.lock)
+            screen.orientation.lock("landscape").catch(function () {});
+        } catch (e) {}
+      }
+      function enterFullscreen() {
+        if (fullscreenElement()) return;
+        var el = document.documentElement;
+        try {
+          var p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: "hide" }) : el.webkitRequestFullscreen();
+          if (p && p.catch) p.catch(function () {});
+        } catch (e) {}
+      }
+      var autoFullscreenArmed = true;
+      var autoFullscreenEvents = ["touchend", "pointerup", "click"];
+      function onAutoFullscreenGesture() {
+        if (canFullscreen()) enterFullscreen();
+        else {
+          // 不能全螢幕（iPhone 的 Safari）：只試一次鎖向（一定失敗、被吞掉），之後不再攔點擊
+          disarmAutoFullscreen();
+          lockLandscape();
+        }
+      }
+      function disarmAutoFullscreen() {
+        if (!autoFullscreenArmed) return;
+        autoFullscreenArmed = false;
+        autoFullscreenEvents.forEach(function (t) { document.removeEventListener(t, onAutoFullscreenGesture, true); });
+      }
+      function onFullscreenChange() {
+        var on = !!fullscreenElement();
+        root.classList.toggle("is-fullscreen", on);
+        if (on) {
+          disarmAutoFullscreen();
+          lockLandscape();
+        } else {
+          showFullscreenButtonExpanded();
+        }
+      }
+
+      // 手機的全螢幕按鈕：出現時先顯示「⛶ 全螢幕」幾秒，之後縮成半透明的小圖示，少擋一點上方中央的 HUD 提示條。
+      var fsButtonTimer = 0;
+      function showFullscreenButtonExpanded() {
+        var btn = document.querySelector("#mobile-fullscreen-button");
+        btn.classList.remove("is-collapsed");
+        clearTimeout(fsButtonTimer);
+        fsButtonTimer = setTimeout(function () { btn.classList.add("is-collapsed"); }, 4000);
+      }
+
+      if (isMobile) {
+        if (canFullscreen()) root.classList.add("can-fullscreen");
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+        document.querySelector("#mobile-fullscreen-button").addEventListener("click", function (e) {
+          e.stopPropagation();
+          enterFullscreen();
+        });
+
+        showFullscreenButtonExpanded();
+
+        // touchend／pointerup／click：各瀏覽器認定的使用者手勢不同，三個都聽；同一下點擊重複請求時第二次會被吞掉。
+        autoFullscreenEvents.forEach(function (t) { document.addEventListener(t, onAutoFullscreenGesture, true); });
+
+        // CSS 的 touch-action／overscroll-behavior 之外再擋一次：iOS Safari 的捏合縮放、
+        // 頁面捲動與下拉重新整理、長按選單與選取。只 preventDefault、不 stopPropagation，Unity 照樣收得到觸控。
+        // touchstart 不擋：擋了瀏覽器就不會產生 click，第一次點擊進全螢幕會失效。
+        document.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+        ["gesturestart", "gesturechange", "gestureend", "dblclick", "contextmenu", "selectstart"].forEach(function (t) {
+          document.addEventListener(t, function (e) {
+            // Unity 的行動鍵盤會臨時建立 input／textarea，那裡要能選取、移游標
+            if (t == "selectstart" && e.target && /^(INPUT|TEXTAREA)$/.test(e.target.nodeName)) return;
+            e.preventDefault();
+          }, { passive: false });
+        });
+      }
+
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+        frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+#if USE_THREADS
+        workerUrl: buildUrl + "/{{{ WORKER_FILENAME }}}",
+#endif
+#if USE_WASM
+        codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+#endif
+#if SYMBOLS_FILENAME
+        symbolsUrl: buildUrl + "/{{{ SYMBOLS_FILENAME }}}",
+#endif
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+        productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+        productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+        showBanner: unityShowBanner,
+      };
+
+      if (isMobile) {
+        config.devicePixelRatio = mobileDevicePixelRatio();
+        // 先把畫布像素設成「CSS 尺寸 × DPR」：Unity 只在目標尺寸「改變」時才重設畫布，
+        // 實測 DPR 上限 1 時開場比對不到變化，畫布會停在 WIDTH×HEIGHT（960×600）而被拉伸。
+        canvas.width = Math.round(canvas.clientWidth * config.devicePixelRatio);
+        canvas.height = Math.round(canvas.clientHeight * config.devicePixelRatio);
+      } else {
+        // 桌機：同 Default 範本，固定尺寸畫布，頁尾按鈕用 Unity 自己的全螢幕
+        canvas.style.width = "{{{ WIDTH }}}px";
+        canvas.style.height = "{{{ HEIGHT }}}px";
+      }
+
+#if BACKGROUND_FILENAME
+      canvas.style.background = "url('" + buildUrl + "/{{{ BACKGROUND_FILENAME.replace(/'/g, '%27') }}}') center / cover";
+#endif
+
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = function () {
+        createUnityInstance(canvas, config, function (progress) {
+          var pct = Math.round(100 * progress);
+          document.querySelector("#loading-bar-full").style.width = pct + "%";
+          // Unity 的進度到 0.9 之後是解析 wasm 與初始化，沒有細分；這段改顯示文字，免得看起來卡住。
+          document.querySelector("#loading-text").textContent = progress >= 0.9 ? "初始化中…" : "載入中 " + pct + "%";
+        }).then(function (unityInstance) {
+          loading.style.display = "none";
+          document.querySelector("#unity-fullscreen-button").onclick = function () {
+            unityInstance.SetFullscreen(1);
+          };
+#if SHOW_DIAGNOSTICS
+          document.querySelector("#diagnostics-icon").onclick = function () {
+            unityDiagnostics.openDiagnosticsDiv(unityInstance.GetMetricsInfo);
+          };
+#endif
+#if DEVELOPMENT_PLAYER
+          var profile = unityProfiler.createButton(unityInstance);
+          profile.style.marginLeft = "5px";
+          document.querySelector("#unity-build-title").appendChild(profile);
+#endif
+        }).catch(function (message) {
+          showLoadError(message);
+        });
+      };
+      script.onerror = function () {
+        showLoadError("無法載入 " + loaderUrl + "，請確認網路後重新整理。");
+      };
+      document.body.appendChild(script);
+    </script>
+  </body>
+</html>

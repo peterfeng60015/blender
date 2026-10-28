@@ -80,3 +80,6 @@ Assets/HybridCLRGenerate.meta
 # 打包產物
 /ServerData/
 /Bundles/
+
+# Android 原生出包的建置暫存
+/.utmp/

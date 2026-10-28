@@ -9,8 +9,9 @@ namespace Sidescroller
 {
     /// <summary>
     /// 演出與所有 UI（interfaces.md §4.3）。每次 Boot 建一次，重生不重建。
-    /// 自己建 Screen Space Overlay Canvas，由下到上：HUD、對話框、淡入淡出遮罩、字卡、通關畫面、暫停選單。
+    /// 自己建 Screen Space Overlay Canvas，由下到上：HUD、觸控按鈕、對話框、淡入淡出遮罩、字卡、通關畫面、暫停選單、直向提示。
     /// 建立時畫面全黑（等流程淡入）。不建 EventSystem，按鍵一律讀 <see cref="SsInput"/>。
+    /// 直向（Screen.width &lt; Screen.height）時蓋直向提示並 SetPaused(true)；轉回橫向時只解除自己設的暫停，玩家開的暫停選單照舊。
     /// 不留 static 狀態：全部狀態在實例上，跟著場景卸載消失。
     /// </summary>
     public sealed class StoryUi : MonoBehaviour
@@ -39,10 +40,20 @@ namespace Sidescroller
         private bool _cleared;
         #endregion
 
+        #region 直向提示
+        private RotateHintView _rotate;
+        /// <summary>暫停是直向提示設的（轉回橫向時要解除）；玩家自己開的暫停選單不算。</summary>
+        private bool _rotatePaused;
+        #endregion
+
         internal HudView Hud { get; private set; }
         internal DialogueView Dialogue { get; private set; }
         internal FadeView Fade { get; private set; }
         internal BannerView Banner { get; private set; }
+        internal TouchControlsView Touch { get; private set; }
+
+        /// <summary>觸控按鈕要全部收起（手指都當點擊）：暫停中（含暫停選單、直向提示）、通關畫面。</summary>
+        internal bool TouchBlocked => _cleared || _session.Paused || (_rotate != null && _rotate.Visible);
 
         public static StoryUi Create(GameSession session, CameraRig rig)
         {
@@ -176,12 +187,15 @@ namespace Sidescroller
             var canvas = SsUiKit.CreateCanvas("StoryCanvas", CanvasOrder, transform);
             var root = canvas.transform;
             Hud = new HudView(root, _font, session);
+            Touch = new TouchControlsView(root, _font, session, this);
             Dialogue = new DialogueView(root, _font);
             Fade = new FadeView(root);
             Banner = new BannerView(root, _font);
             BuildClearScreen(root);
             BuildPauseMenu(root);
+            _rotate = new RotateHintView(root, _font, StoryTexts.RotateSub);
             Fade.SetImmediate(1f, false);
+            SsTouch.Pad = Touch;
 
             session.HpChanged += OnHpChanged;
             session.Loadout.Changed += OnLoadoutChanged;
@@ -193,6 +207,13 @@ namespace Sidescroller
 
         private void OnDestroy()
         {
+            if (Touch != null)
+            {
+                // 重新開始時新的 StoryUi 可能已經登記了，只清自己的
+                if (SsTouch.Pad == Touch)
+                    SsTouch.Pad = null;
+                Touch.Dispose();
+            }
             if (!_subscribed || _session == null)
                 return;
             _subscribed = false;
@@ -235,7 +256,11 @@ namespace Sidescroller
             Fade.Tick(dt);
             Banner.Tick(dt);
             Dialogue.Tick(udt);
-            Hud.RefreshHint();
+            Hud.Tick();
+            var portrait = UpdateRotateHint();
+            Touch.Tick();
+            if (portrait)
+                return;
 
             if (_unpauseAfterFrame >= 0)
             {
@@ -266,6 +291,33 @@ namespace Sidescroller
             }
             if (SsInput.PausePressed)
                 OpenPause();
+        }
+        #endregion
+
+        #region 直向提示
+        /// <summary>
+        /// 直向：顯示提示；還沒暫停就 SetPaused(true) 並記下是自己設的。直向期間 Update 不處理任何選單輸入
+        /// （延後一幀的解除暫停也等轉回來才做）。轉回橫向：只有自己設的暫停才解除。
+        /// </summary>
+        private bool UpdateRotateHint()
+        {
+            if (_rotate.Refresh())
+            {
+                if (!_rotatePaused && !_session.Paused)
+                {
+                    _rotatePaused = true;
+                    _session.SetPaused(true);
+                    Debug.Log("[Sidescroller.StoryUi] 直向，暫停");
+                }
+                return true;
+            }
+            if (_rotatePaused)
+            {
+                _rotatePaused = false;
+                _session.SetPaused(false);
+                Debug.Log("[Sidescroller.StoryUi] 轉回橫向，解除暫停");
+            }
+            return false;
         }
         #endregion
 

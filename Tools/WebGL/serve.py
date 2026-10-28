@@ -8,16 +8,20 @@
   python3 Tools/WebGL/serve.py [--port 8080] [--bind 127.0.0.1]
 然後開 http://127.0.0.1:8080/?serverRoot=ServerData
 
+同網段手機實測：加 --bind 0.0.0.0，手機開啟動時印出的區網網址（Mac 防火牆要允許 python3 連入）。
+
 ?serverRoot=ServerData 會以頁面網址為基準解析成 http://127.0.0.1:8080/ServerData，
 EntrySceneController 只接受與頁面同源的值（見 ResolveWebServerRoot）。
 
 只給本機測試用：沒有 Range（斷點續傳）、沒有 HTTPS。預設只綁 127.0.0.1。
+綁 0.0.0.0 時同網段任何人都能讀 Builds/WebGL 與 ServerData，測完就關掉。
 """
 
 import argparse
 import http.server
 import os
 import posixpath
+import socket
 import urllib.parse
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -39,6 +43,20 @@ EXTRA_TYPES = {
 
 # 以壓縮格式出包時（Brotli／Gzip，且沒開 Decompression Fallback）要回 Content-Encoding。
 ENCODINGS = {".br": "br", ".gz": "gzip"}
+
+# 開了 Decompression Fallback 時檔名是 .unityweb，內容可能是 gzip、brotli 或未壓縮。
+# 只有 gzip 有固定檔頭（1f 8b），看得出來就回 Content-Encoding: gzip 讓瀏覽器原生解壓（省下 JS 解壓的時間）；
+# 其他情況不回，交給載入器用 JS 解壓。載入器會自己檢查內容是否還是壓縮的，兩種情況都能跑。
+FALLBACK_EXT = ".unityweb"
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _is_gzip_file(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read(2) == GZIP_MAGIC
+    except OSError:
+        return False
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -67,7 +85,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def guess_type(self, path):
         base, ext = os.path.splitext(path)
-        if ext in ENCODINGS:
+        if ext in ENCODINGS or ext == FALLBACK_EXT:
             ext = os.path.splitext(base)[1]
         return EXTRA_TYPES.get(ext) or super().guess_type(path)
 
@@ -75,9 +93,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ext = os.path.splitext(urllib.parse.urlsplit(self.path).path)[1]
         if ext in ENCODINGS:
             self.send_header("Content-Encoding", ENCODINGS[ext])
+        elif ext == FALLBACK_EXT and _is_gzip_file(self.translate_path(self.path)):
+            self.send_header("Content-Encoding", "gzip")
         # 測試時每次都拿最新的檔：版本指針、manifest、重新出的包都不該被快取住。
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()
+
+
+def _lan_ip():
+    """本機對外的區網 IP（不真的送封包，只讓系統選路由）。拿不到時回 None。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))
+        ip = s.getsockname()[0]
+        return None if ip.startswith("127.") else ip
+    except OSError:
+        return None
+    finally:
+        s.close()
 
 
 def main():
@@ -92,7 +125,13 @@ def main():
         print(f"找不到 {SERVER_DATA_ROOT}，請先打代碼包與資源包")
 
     server = http.server.ThreadingHTTPServer((args.bind, args.port), Handler)
-    print(f"遊戲：  http://{args.bind}:{args.port}/?serverRoot=ServerData")
+    # 0.0.0.0 不是能開的網址（新版 Chrome 會擋），本機一律印 127.0.0.1
+    local_host = "127.0.0.1" if args.bind == "0.0.0.0" else args.bind
+    print(f"遊戲：  http://{local_host}:{args.port}/?serverRoot=ServerData")
+    if args.bind == "0.0.0.0":
+        lan_ip = _lan_ip()
+        if lan_ip:
+            print(f"區網：  http://{lan_ip}:{args.port}/?serverRoot=ServerData")
     print(f"根目錄：{GAME_ROOT}")
     print(f"資料：  {SERVER_DATA_ROOT}（/ServerData/）")
     try:

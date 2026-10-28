@@ -7,7 +7,8 @@ namespace Sidescroller
 {
     /// <summary>
     /// 程式建 uGUI 的小工具（無狀態）。全部 Screen Space Overlay、以 1920×1080 為基準縮放；
-    /// 不加 GraphicRaycaster、不建 EventSystem，每個 Graphic 都 raycastTarget = false，滑鼠點擊由 <see cref="MenuList"/> 自己判斷。
+    /// 不加 GraphicRaycaster、不建 EventSystem，每個 Graphic 都 raycastTarget = false，滑鼠與觸控點擊由 <see cref="MenuList"/>、
+    /// <see cref="TouchControlsView"/> 自己判斷。
     /// </summary>
     public static class SsUiKit
     {
@@ -88,17 +89,57 @@ namespace Sidescroller
         }
 
         /// <summary>
-        /// 這一幀滑鼠左鍵按下的螢幕座標。只用按鈕的 wasPressedThisFrame 與 AxisControl（float）讀位置，
-        /// 不呼叫 <c>ReadValue&lt;Vector2&gt;</c>（interfaces.md §8）。
+        /// 這一幀點擊的螢幕座標：觸控按在觸控按鈕以外的地方，或滑鼠左鍵按下（剛觸控過的那段時間不算，避免觸控被模擬成滑鼠後點兩次）。
+        /// 只用按鈕的 wasPressedThisFrame 與 AxisControl（float）讀位置，不呼叫 <c>ReadValue&lt;Vector2&gt;</c>（interfaces.md §8）。
         /// </summary>
-        public static bool MouseClicked(out Vector2 screenPos)
+        public static bool PointerClicked(out Vector2 screenPos)
         {
+            if (SsTouch.Tapped(out screenPos))
+                return true;
             screenPos = Vector2.zero;
             var mouse = Mouse.current;
-            if (mouse == null || !mouse.leftButton.wasPressedThisFrame)
+            if (mouse == null || !mouse.leftButton.wasPressedThisFrame || SsTouch.MouseSuppressed)
                 return false;
             screenPos = new Vector2(mouse.position.x.ReadValue(), mouse.position.y.ReadValue());
             return true;
+        }
+
+        /// <summary>畫布單位換成螢幕像素的比例（與 <see cref="CreateCanvas"/> 的 CanvasScaler 相同：1920×1080、match 0.5＝寬高比例的幾何平均）。</summary>
+        public static float UnitsToPx() => Mathf.Sqrt(Mathf.Max(1f, Screen.width) / 1920f * (Mathf.Max(1f, Screen.height) / 1080f));
+
+        /// <summary>實體長度（mm）換成畫布單位；<see cref="Screen.dpi"/> 不可信（不在 50～1000）時回傳 0，由呼叫端改用設計尺寸。</summary>
+        public static float MmToUnits(float mm)
+        {
+            var dpi = Screen.dpi;
+            if (dpi < 50f || dpi > 1000f)
+                return 0f;
+            return mm / 25.4f * dpi / UnitsToPx();
+        }
+
+        /// <summary>
+        /// 把撐滿畫布的 rt 縮到 <see cref="Screen.safeArea"/>（避開瀏海、圓角、Home 指示條）。每幀呼叫即可：
+        /// 旋轉或改解析度後自動跟上，沒變時不動 RectTransform。
+        /// </summary>
+        public static void FitSafeArea(RectTransform rt)
+        {
+            var w = Screen.width;
+            var h = Screen.height;
+            if (rt == null || w <= 0 || h <= 0)
+                return;
+            var safe = Screen.safeArea;
+            var min = new Vector2(Mathf.Clamp01(safe.xMin / w), Mathf.Clamp01(safe.yMin / h));
+            var max = new Vector2(Mathf.Clamp01(safe.xMax / w), Mathf.Clamp01(safe.yMax / h));
+            if (max.x <= min.x || max.y <= min.y)
+            {
+                min = Vector2.zero;
+                max = Vector2.one;
+            }
+            if (rt.anchorMin == min && rt.anchorMax == max)
+                return;
+            rt.anchorMin = min;
+            rt.anchorMax = max;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
         }
 
         /// <summary>mm:ss（超過 99 分鐘照樣累加分鐘）。</summary>

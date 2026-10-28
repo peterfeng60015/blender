@@ -7,10 +7,12 @@ namespace Sidescroller
         public const string GlowshaftTitle = "螢火礦坑";
         public const string MenuTitle = "選擇遊戲";
         public const string MenuHint = "↑↓：選擇　Enter：確定";
+        public const string MenuHintTouch = "點一下遊戲名稱開始";
         public const string MenuErrorPrefix = "啟動失敗：";
 
         public const string DialogueNext = "▼";
         public const string DialogueHelp = "Space／Enter：繼續　Esc：暫停";
+        public const string DialogueHelpTouch = "點畫面：繼續　右上 Ⅱ：暫停";
 
         public const string PauseTitle = "暫停";
         public const string PauseResume = "繼續";
@@ -25,19 +27,77 @@ namespace Sidescroller
 
         public const string GrantPrefix = "獲得：";
         public const string SwitchCostume = "C 換制服";
+        public const string SwitchCostumeTouch = "點「換裝」換制服";
         public const string BossLabel = "BOSS";
+
+        #region 觸控
+        public const string TouchJump = "跳";
+        public const string TouchMelee = "甩包";
+        public const string TouchShoot = "彈弓";
+        public const string TouchRoll = "滾殼";
+        public const string TouchSwitch = "換裝";
+        public const string TouchPause = "Ⅱ";
+        public const string RotateHint = "請把手機轉成橫向";
+        public const string RotateSub = "遊戲已暫停，轉回橫向後繼續";
+
+        /// <summary>
+        /// 關卡資料（SsLevel_*.txt 的 hint 觸發區）裡寫鍵盤按鍵的提示 → 觸控版；兩個陣列一一對應。
+        /// 改關卡提示原文時要一起改這裡，對不上就照原文顯示。
+        /// </summary>
+        private static readonly string[] KeyboardHints =
+        {
+            "A／D 或 ←／→：移動　J：甩包攻擊",
+            "Space：跳躍（按住跳更高）",
+            "S＋Space：從木板往下跳",
+            "C：換制服（日班：甩包更痛／特急：跑更快）",
+            "K：彈弓射擊　W＋K：往斜上射",
+            "L：滾殼衝撞，可以撞破盾牌",
+        };
+
+        private static readonly string[] TouchHints =
+        {
+            "左側搖桿：移動　「甩包」鈕：甩包攻擊",
+            "「跳」鈕：跳躍（按住跳更高）",
+            "搖桿往下＋「跳」：從木板往下跳",
+            "「換裝」鈕：換制服（日班：甩包更痛／特急：跑更快）",
+            "「彈弓」鈕：射擊　搖桿往上＋「彈弓」：往斜上射",
+            "「滾殼」鈕：衝撞，可以撞破盾牌",
+        };
+
+        /// <summary>觸控模式時把關卡提示換成觸控版（沒有對應的照原文）。</summary>
+        public static string ForInput(string hint, bool touch)
+        {
+            if (!touch || string.IsNullOrEmpty(hint))
+                return hint;
+            for (var i = 0; i < KeyboardHints.Length; i++)
+            {
+                if (KeyboardHints[i] == hint)
+                    return TouchHints[i];
+            }
+            return hint;
+        }
+        #endregion
 
         /// <summary>動態文字可能用到的字元（通關時間、血量等）。</summary>
         public const string Digits = "0123456789:";
 
-        /// <summary>全部固定文字，給 Editor 檢查工具檢查缺字。</summary>
-        public static readonly string[] All =
+        /// <summary>全部固定文字（含觸控版關卡提示），給 Editor 檢查工具檢查缺字（KeyboardHints 是關卡資料原文，由關卡檢查涵蓋）。</summary>
+        public static readonly string[] All = Concat(new[]
         {
-            GameTitle, GlowshaftTitle, MenuTitle, MenuHint, MenuErrorPrefix,
-            DialogueNext, DialogueHelp,
+            GameTitle, GlowshaftTitle, MenuTitle, MenuHint, MenuHintTouch, MenuErrorPrefix,
+            DialogueNext, DialogueHelp, DialogueHelpTouch,
             PauseTitle, PauseResume, PauseSkip, PauseRespawn, PauseQuit,
             ClearTitle, ClearTimePrefix, ClearRestart, ClearQuit,
-            GrantPrefix, SwitchCostume, BossLabel, Digits,
-        };
+            GrantPrefix, SwitchCostume, SwitchCostumeTouch, BossLabel, Digits,
+            TouchJump, TouchMelee, TouchShoot, TouchRoll, TouchSwitch, TouchPause, RotateHint, RotateSub,
+        }, TouchHints);
+
+        private static string[] Concat(string[] a, string[] b)
+        {
+            var r = new string[a.Length + b.Length];
+            a.CopyTo(r, 0);
+            b.CopyTo(r, a.Length);
+            return r;
+        }
     }
 }

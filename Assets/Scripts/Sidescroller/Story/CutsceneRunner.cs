@@ -202,7 +202,8 @@ namespace Sidescroller
                 {
                     // 先等一幀：結束上一句的那次確定鍵不會直接把這句打完
                     await UniTask.Yield(PlayerLoopTiming.Update, token);
-                    var confirm = !_session.Paused && SsInput.ConfirmPressed;
+                    // 觸控：點按鈕以外的地方。演出中觸控按鈕只留暫停鈕，點畫面的手指綁成「點擊」，按著不放也不會變成跳躍
+                    var confirm = !_session.Paused && (SsInput.ConfirmPressed || SsInput.ScreenTapped);
                     if (shown < total)
                     {
                         shown = confirm ? total : Mathf.Min(total, shown + c.Speed * Time.deltaTime);
