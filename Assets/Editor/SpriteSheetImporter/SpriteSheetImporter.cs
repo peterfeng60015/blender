@@ -20,8 +20,7 @@ using UnityEngine;
 /// 只用 Unity 內建型別，沒有任何 MonoBehaviour／ScriptableObject；放在獨立的 Editor 組件，不依賴
 /// Assembly-CSharp（注意：專案裡任何組件有編譯錯誤時，batchmode 仍會在執行 -executeMethod 前中止）。
 ///
-/// 根目錄有兩個：《螢火礦坑》的 Assets/Art/Glowshaft/Sprites 與新作的 Assets/Art/Sidescroller/Sprites。
-/// 兩個資料夾都歸素材管線所有：不合規的 json、PPU 不一致（兩邊合起來算）都算失敗。
+/// 根目錄是《熱浪急件》的 Assets/Art/Sidescroller/Sprites，歸素材管線所有：不合規的 json、PPU 不一致都算失敗。
 ///
 /// batchmode（素材更新後重跑即可）：
 ///   Unity -batchmode -quit -nographics -projectPath &lt;專案&gt; \
@@ -30,10 +29,9 @@ using UnityEngine;
 /// </summary>
 public static class SpriteSheetImporter
 {
-    public const string SpritesRoot = "Assets/Art/Glowshaft/Sprites";
-    public const string SidescrollerSpritesRoot = "Assets/Art/Sidescroller/Sprites";
+    public const string SpritesRoot = "Assets/Art/Sidescroller/Sprites";
     /// <summary>會被匯入與檢查的全部根目錄；不存在的會略過。</summary>
-    public static readonly string[] SpritesRoots = { SpritesRoot, SidescrollerSpritesRoot };
+    public static readonly string[] SpritesRoots = { SpritesRoot };
     public const string NormalMapName = "_NormalMap";
     private const string LogPrefix = "[SpriteSheetImporter] ";
 
@@ -62,7 +60,7 @@ public static class SpriteSheetImporter
         public string normal;
     }
 
-    [MenuItem("Tools/Glowshaft/匯入 Sprite Sheet", false, 100)]
+    [MenuItem("Tools/Sidescroller/匯入 Sprite Sheet", false, 100)]
     public static void ImportAllMenu()
     {
         int failures = ImportAllInternal();
@@ -70,7 +68,7 @@ public static class SpriteSheetImporter
         EditorUtility.DisplayDialog("Sprite Sheet 匯入", failures == 0 ? "全部匯入並驗證通過。" : $"有 {failures} 個問題，請看 Console。", "OK");
     }
 
-    [MenuItem("Tools/Glowshaft/檢查 Sprite Sheet 匯入結果", false, 101)]
+    [MenuItem("Tools/Sidescroller/檢查 Sprite Sheet 匯入結果", false, 101)]
     public static void ValidateAllMenu()
     {
         int failures = ValidateAllInternal();

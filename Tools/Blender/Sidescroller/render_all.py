@@ -5,7 +5,7 @@
     python3 Tools/Blender/Sidescroller/render_all.py                       # 全部
     python3 Tools/Blender/Sidescroller/render_all.py --only SsHeroDay,SsRat --jobs 4
 
-輸出到 Assets/Art/Sidescroller/Sprites/<Name>/，之後在 Unity 跑 Tools/Glowshaft/匯入 Sprite Sheet
+輸出到 Assets/Art/Sidescroller/Sprites/<Name>/，之後在 Unity 跑 Tools/Sidescroller/匯入 Sprite Sheet
 （兩款遊戲的素材一起匯入；batchmode 用 -executeMethod SpriteSheetImporter.ImportAndValidate）。
 單幀 PNG 與 Blender log 留在 --work（預設系統暫存資料夾），不進專案。
 """
@@ -114,7 +114,7 @@ def main():
     if failed:
         print(f"失敗：{', '.join(failed)}")
         sys.exit(1)
-    print(f"全部完成，輸出在 {DEST_ROOT}；請到 Unity 執行 Tools/Glowshaft/匯入 Sprite Sheet")
+    print(f"全部完成，輸出在 {DEST_ROOT}；請到 Unity 執行 Tools/Sidescroller/匯入 Sprite Sheet")
 
 
 if __name__ == "__main__":

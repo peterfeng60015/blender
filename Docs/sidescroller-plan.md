@@ -12,7 +12,7 @@
 | 主角 | 全程同一隻；攻擊手段與服裝由**劇情節點給予** |
 | 劇情演出 | 場景上的對話框＋過場演出（角色移動、鏡頭、停頓、特寫、發放能力）；**資料驅動的演出腳本（json）**，放進 YooAsset 資源包，可熱更 |
 | 對話語言 | 繁體中文，字型用專案內的思源黑體（已在 Git LFS） |
-| 舊遊戲 | 《螢火礦坑》**保留，兩個遊戲並存**；進入點加選單選擇要玩哪一個。**2026-10-28 使用者決定選單只列《熱浪急件》**（原話「幫我把選項改成只有熱浪急件」）：螢火礦坑的程式與素材仍在專案裡，要放回選單時在 `GameSelectMenuView.Choices` 加一項 |
+| 舊遊戲 | 《螢火礦坑》原本保留、兩個遊戲並存，進入點加選單選擇要玩哪一個。2026-10-28 使用者先決定選單只列《熱浪急件》，之後**2026-10-28 使用者決定從專案刪除《螢火礦坑》（Glowshaft）的程式與素材**（原話「幫我把營火礦坑的素材和代碼從專案中刪除」）：`Assets/Scripts/Glowshaft`、`Assets/Art/Glowshaft`、`Tools/Blender/Glowshaft` 與只拍 Glowshaft 素材的 `SpriteSheetPreview.cs` 已移除，收集器只剩 Sidescroller 的兩個 group。選單架構保留，日後加遊戲時在 `GameSelectMenuView.Choices` 加一項 |
 | 網頁版 | **2026-10-28 追加**：使用者要求「在網頁上運行」並選完整支援 WebGL（保留代碼包／資源包更新）。Entry 加 `UNITY_WEBGL` 分支（YooAsset WebPlayMode＋WebNetworkFileSystem），出包工具 `Tools/WebGL/一鍵出 WebGL 包`，本機伺服器 `Tools/WebGL/serve.py`；已上傳 GCS 試玩，細節見看板 `handoff-webgl.md` |
 | 執行方式 | 子 session＋協調看板；先由設計 session 定稿，使用者確認後才分工開發 |
 
@@ -88,7 +88,7 @@
 
 - **NPR 風格的還原度**：預渲染 sprite 能做出卡通色階＋描邊，但「動畫感」很吃動作設計；垂直切片先求可讀與一致，風格細節之後迭代。
 - **側視角動作數**：動作越多渲染越久、資源包越大；垂直切片先控制在每角色 5～6 個動作。
-- **兩個遊戲並存**：共用 `AppBootstrap` 入口與 AssetPackage，素材資料夾要分開（`Assets/Art/Glowshaft/`、`Assets/Art/<新作>/`），收集器也要分組。
+- ~~**兩個遊戲並存**~~（已不適用：《螢火礦坑》已刪除，見第 1 節）：共用 `AppBootstrap` 入口與 AssetPackage，素材資料夾要分開，收集器也要分組。
 - **中文字型在 Player 的顯示**：思源黑體 TMP 字型是 Static 字集，要確認劇本用到的字都在字集內；設計 session 會列出需求。
 - **工期**：設計約 1 小時（含使用者確認），平行開發約 2～3 小時，整合與 review 約 1 小時（實際依用量與實測而定）。
 

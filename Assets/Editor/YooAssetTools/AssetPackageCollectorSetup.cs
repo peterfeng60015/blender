@@ -8,25 +8,23 @@ using YooAsset.Editor;
 /// 以程式建立/更新 YooAsset 的 AssetPackage（美術素材與資料）收集器設定。
 /// 寫法與理由同 <see cref="CodePackageCollectorSetup"/>：走 API 不手寫 YAML、可重複執行、不寫 CollectorGUID。
 ///
-/// 同一個 package（<see cref="PackageName"/>，GameAssets 只認這個）底下三個 group，規則都相同：
-///   - glowshaft_sprites：Assets/Art/Glowshaft/Sprites（螢火礦坑）。
+/// 同一個 package（<see cref="PackageName"/>，GameAssets 只認這個）底下兩個 group，規則都相同：
 ///   - sidescroller_sprites：Assets/Art/Sidescroller/Sprites（熱浪急件的 sprite sheet）。
 ///   - sidescroller_data：Assets/Art/Sidescroller/Data（演出腳本、關卡資料；Cutscenes、Levels 各一包）。
-///   - PackTopDirectory：底下每個子資料夾一包（Miner、SsHeroDay、Cutscenes…），改一個只會重下那一包。
-///   - AddressByFileName：定位地址＝檔名不含副檔名（Miner_Run、SsHeroDay_Run_n、SsLevel_Stage1）。
+///   - PackTopDirectory：底下每個子資料夾一包（SsHeroDay、Cutscenes…），改一個只會重下那一包。
+///   - AddressByFileName：定位地址＝檔名不含副檔名（SsHeroDay_Run、SsHeroDay_Run_n、SsLevel_Stage1）。
 ///   - CollectAll：png（主圖與法線圖 _n，各自是獨立的 sprite 貼圖）、json、txt 都收。
 ///
-/// Sidescroller 的兩個 group 只在收集路徑存在時才加入（不存在就警告並略過）：
-/// 資料還沒落地時 Glowshaft 照樣能打包與 Editor 模擬。資料夾第一次出現後要重跑一次選單
-/// （Editor 模擬模式讀的是已存檔的設定，不會自動重跑；打包則每次自動跑）。
-/// ⚠️ 反過來，已存檔的設定含 Sidescroller group、資料夾卻被移走時，YooAsset 收集會丟 "Collect path is invalid"，
-/// Editor 模擬連 Glowshaft 都進不去，要重跑選單；所以這份設定檔要和 Sidescroller 資料夾一起 commit。
+/// 收集路徑不存在時照樣寫入設定（打包時再報錯）；標為 <see cref="GroupSpec.Optional"/> 的 group 則警告並略過。
+/// Editor 模擬模式讀的是已存檔的設定，不會自動重跑；收集路徑變動後要重跑一次選單（打包則每次自動跑）。
+/// ⚠️ 已存檔的設定含某個 group、資料夾卻被移走時，YooAsset 收集會丟 "Collect path is invalid"，
+/// 要重跑選單；所以這份設定檔要和素材資料夾一起 commit。
 ///
 /// 素材規範（違反時模擬建置與打包都會失敗，<see cref="AssetPackageBuildTool"/> 打包前會先檢查並列出）：
 ///   - 收集根目錄只能放子資料夾，不能直接放檔案（PackTopDirectory 丟 "Root directory not found"）。
 ///   - 子資料夾名稱不能含 '.'（Path.HasExtension 會把它當成檔案，同樣丟例外）。
 ///   - 整個 package 內檔名（不含副檔名）必須唯一（AddressByFileName 撞名丟 "Address already exists"）。
-///   - Sidescroller 的檔名與 Sprites 子資料夾名一律 Ss 開頭（Glowshaft 沒有 Ss 開頭的檔，加前綴就不會撞名）。
+///   - Sidescroller 的檔名與 Sprites 子資料夾名一律 Ss 開頭（日後加入其他遊戲的素材時，加前綴就不會撞名）。
 ///
 /// 只動 AssetPackage 這一筆，CodePackage 的設定由 CodePackageCollectorSetup 負責，兩者互不覆蓋。
 /// ⚠️ 這一筆每次都整筆重建：在 YooAsset 收集器視窗手動加的 group／collector 會被覆蓋，要改請改這份程式。
@@ -35,7 +33,6 @@ public static class AssetPackageCollectorSetup
 {
     public const string PackageName = "AssetPackage";
 
-    public const string SpritesCollectPath = "Assets/Art/Glowshaft/Sprites";
     public const string SidescrollerSpritesCollectPath = "Assets/Art/Sidescroller/Sprites";
     public const string SidescrollerDataCollectPath = "Assets/Art/Sidescroller/Data";
 
@@ -65,17 +62,10 @@ public static class AssetPackageCollectorSetup
     {
         new GroupSpec
         {
-            GroupName = "glowshaft_sprites",
-            GroupDesc = "每個 <Name> 子資料夾一包",
-            CollectPath = SpritesCollectPath,
-            Optional = false,
-        },
-        new GroupSpec
-        {
             GroupName = "sidescroller_sprites",
             GroupDesc = "每個 <Name> 子資料夾一包（Ss 開頭）",
             CollectPath = SidescrollerSpritesCollectPath,
-            Optional = true,
+            Optional = false,
             RequiredFilePrefix = "Ss",
             FolderNeedsPrefix = true,
         },
@@ -84,7 +74,7 @@ public static class AssetPackageCollectorSetup
             GroupName = "sidescroller_data",
             GroupDesc = "Cutscenes、Levels 各一包（檔名 Ss 開頭）",
             CollectPath = SidescrollerDataCollectPath,
-            Optional = true,
+            Optional = false,
             RequiredFilePrefix = "Ss",
         },
     };
@@ -119,9 +109,8 @@ public static class AssetPackageCollectorSetup
     /// <summary>
     /// 建立或更新 AssetPackage 的收集器設定。可重複執行。
     ///
-    /// Glowshaft 的收集路徑還不存在時照樣寫入設定，但略過 CheckConfigError 並警告：
-    /// 這個資料夾歸 art 管，這裡不替它建空資料夾。此時打包會失敗、Editor 模擬模式會略過 AssetPackage。
-    /// Sidescroller 的收集路徑不存在時整個 group 略過（見類別註解）。
+    /// 收集路徑還不存在時照樣寫入設定，但略過 CheckConfigError 並警告：
+    /// 這些資料夾歸 art 管，這裡不替它建空資料夾。此時打包會失敗、Editor 模擬模式會略過 AssetPackage。
     /// </summary>
     public static void Setup()
     {
@@ -141,7 +130,7 @@ public static class AssetPackageCollectorSetup
         var package = new BundleCollectorPackage
         {
             PackageName = PackageName,
-            PackageDesc = "Glowshaft／Sidescroller 美術素材與資料（sprite sheet、法線圖、json、txt），ScriptableBuildPipeline",
+            PackageDesc = "Sidescroller 美術素材與資料（sprite sheet、法線圖、json、txt），ScriptableBuildPipeline",
             EnableAddressable = true,
             SupportExtensionless = false,
             LocationToLower = false,

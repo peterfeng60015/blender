@@ -4,6 +4,8 @@
 共同規則（HybridCLR、命名、`#region`、Input System、渲染、Unity 鎖、審查、看板回報）一律照看板 `RULES.md`，本文件只補這款遊戲內部的分工與介面。
 設計內容（數值、關卡、劇本、美術清單）見 `design.md`；演出腳本格式見 `cutscene-format.md`。
 
+> **2026-10-28 使用者決定從專案刪除《螢火礦坑》（Glowshaft）的程式與素材**（原話「幫我把營火礦坑的素材和代碼從專案中刪除」）。本文件提到 Glowshaft 的地方（不能改的檔、`glowshaft_sprites` group、選單的螢火礦坑選項、「Glowshaft 素材匯入結果不變」等驗收項）都是當時的紀錄，現已不適用；現況：匯入工具與收集器只處理 `Assets/Art/Sidescroller/`，選單只有《熱浪急件》。
+
 **改介面的流程**：本文件 §3（Contracts）的型別歸 `player`，§4 各角色的公開 API 歸各自角色。要改簽名或加欄位：先 SendMessage 給擁有者與協調，擁有者改完通知所有受影響的角色。**不要直接改別人的檔案**。
 
 ---
@@ -549,15 +551,14 @@ sprite 名稱＝`<Name>_<Action>_<編號>`，編號＝第幾幀（單列）。`S
 
 ### 6.3 AssetPackage 分組（`assetpkg`）
 
-仍是同一個 package **`AssetPackage`**（`GameAssets` 只認這個），新增兩個 group：
+仍是同一個 package **`AssetPackage`**（`GameAssets` 只認這個），新增兩個 group（`glowshaft_sprites` 已隨《螢火礦坑》刪除）：
 
 | Group | CollectPath | PackRule | AddressRule | Filter | 結果 |
 |---|---|---|---|---|---|
-| `glowshaft_sprites`（既有，不動） | `Assets/Art/Glowshaft/Sprites` | PackTopDirectory | AddressByFileName | CollectAll | 每個 `<Name>` 一包 |
 | `sidescroller_sprites` | `Assets/Art/Sidescroller/Sprites` | PackTopDirectory | AddressByFileName | CollectAll | 每個 `<Name>` 一包，改一個角色只重下那一包 |
 | `sidescroller_data` | `Assets/Art/Sidescroller/Data` | PackTopDirectory | AddressByFileName | CollectAll | `Cutscenes`、`Levels` 各一包，改劇本只重下演出包 |
 
-- **新 group 只在收集路徑存在時才加入**（不存在就記警告並略過）：art 或 story／level 的資料還沒落地時，Glowshaft 照樣能打包與在 Editor 模擬。
+- 收集路徑不存在時照樣寫入設定，打包時報錯（刪除《螢火礦坑》後兩個 group 都改成必要；原本「不存在就略過」是為了讓 Glowshaft 照樣能打包）。
 - 打包前檢查擴大到新的根目錄：根目錄不放檔案、子資料夾名不含 `.`、全 package 檔名唯一、Sidescroller 的檔名都以 `Ss` 開頭；略過以 `.` 開頭或 `~` 結尾的檔案與資料夾（art 的 `.staging/`）。
 - `AssetPackageBuildTool` 打包前會自己跑 `AssetPackageCollectorSetup.Setup()`，但 **Editor 模擬模式讀的是已存檔的 `Assets/BundleCollectorSetting.asset`，不會自動重跑**：Sidescroller 的資料夾第一次出現後要重跑一次選單 `Tools/YooAsset/建立或更新 AssetPackage 收集器設定`（assetpkg 交差前跑、協調整合前再跑一次）。`BundleCollectorSetting.asset` 只由這個 Setup 改寫，歸 assetpkg。
 - 驗收：Editor 模擬模式從 Entry 進新作，`SsArt` 不走 Editor 備援（log 沒有備援警告）；`OneClickBuildAssetPackage` 成功，清單裡有全部 `Ss*` location。
@@ -652,7 +653,7 @@ public static void Run()
 ### 7.3 選單內容與切換
 
 - 選單建自己的執行期場景 `GameSelect`（設為 active）、自己的相機（黑底）與 Overlay Canvas；字型用思源黑體（7.4）。
-- 項目：**目前只有新作《熱浪急件》**（2026-10-28 使用者決定）；列哪些遊戲由 `GameSelectMenuView.Choices` 決定，螢火礦坑要放回時加 `GameSelectMenu.ChoiceGlowshaft`。提示「↑↓：選擇　Enter：確定」。
+- 項目：**目前只有新作《熱浪急件》**（2026-10-28 使用者決定）；列哪些遊戲由 `GameSelectMenuView.Choices` 決定（《螢火礦坑》已從專案刪除）。提示「↑↓：選擇　Enter：確定」。
 - **選單、暫停選單、通關畫面出現的那一幀不處理輸入**（從下一幀開始）：例如在暫停選單按 Space 選「回到選擇遊戲」，同一幀的 `ConfirmPressed` 不能讓新出現的選單直接選中第一項。滑鼠點擊用 `RectTransformUtility.RectangleContainsScreenPoint` 自己判斷，**不建 EventSystem**；鍵盤讀 `SsInput.MenuUp/Down/ConfirmPressed`。
 - 選定後：選單場景的根物件全部 `SetActive(false)` → `SceneManager.SetActiveScene(Entry 場景)`（**一定要**：`GlowshaftGame.Boot` 用 `GetActiveScene()` 當成 Entry）→ `UnloadSceneAsync(GameSelect)` → 再呼叫遊戲的 Boot，**用 try/catch 包住**：
   - 新作：`SidescrollerGame.Boot()`；

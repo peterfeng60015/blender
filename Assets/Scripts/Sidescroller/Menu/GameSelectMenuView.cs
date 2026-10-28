@@ -10,10 +10,7 @@ namespace Sidescroller
     /// </summary>
     public sealed class GameSelectMenuView : MonoBehaviour
     {
-        /// <summary>
-        /// 選單列出的遊戲（依序）。使用者決定目前只列《熱浪急件》；螢火礦坑的程式與素材仍在專案裡，
-        /// 要放回選單時在這裡加上 <see cref="GameSelectMenu.ChoiceGlowshaft"/>。
-        /// </summary>
+        /// <summary>選單列出的遊戲（依序）。目前只有《熱浪急件》；新增遊戲時在 <see cref="GameSelectMenu"/> 加選項常數並列在這裡。</summary>
         private static readonly int[] Choices = { GameSelectMenu.ChoiceSidescroller };
 
         private MenuList _list;
@@ -67,7 +64,7 @@ namespace Sidescroller
             _list = new MenuList(root, font, 0.5f, 140f);
             var labels = new string[Choices.Length];
             for (var i = 0; i < Choices.Length; i++)
-                labels[i] = Choices[i] == GameSelectMenu.ChoiceGlowshaft ? StoryTexts.GlowshaftTitle : StoryTexts.GameTitle;
+                labels[i] = StoryTexts.GameTitle;
             _list.Open(labels);
 
             var hint = SsUiKit.Rect("Hint", root, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f));

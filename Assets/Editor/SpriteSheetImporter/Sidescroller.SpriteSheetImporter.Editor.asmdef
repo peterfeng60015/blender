@@ -1,5 +1,5 @@
 {
-    "name": "Glowshaft.SpriteSheetImporter.Editor",
+    "name": "Sidescroller.SpriteSheetImporter.Editor",
     "rootNamespace": "",
     "references": [
         "Unity.2D.Sprite.Editor",

@@ -11,7 +11,7 @@ namespace EntryScene
     /// EntrySceneController 會在呼叫 <c>AppBootstrap.Run()</c> 之前完成 AssetPackage 的初始化與下載，
     /// 所以 Run() 裡 <see cref="IsReady"/> 已是 true，可以直接載入。
     ///
-    /// location 是收集器的定位地址＝檔名不含副檔名，例如 <c>Miner_Run</c>、<c>Miner_sprites</c>。
+    /// location 是收集器的定位地址＝檔名不含副檔名，例如 <c>SsHeroDay_Run</c>、<c>SsHeroDay_sprites</c>。
     ///
     /// 錯誤一律以 faulted UniTask 回報（await 時丟出），包括「尚未就緒」，不會在呼叫點同步丟出。
     /// 失敗（例如按需下載時斷網）之後同一個 location 可以再呼叫重試。
@@ -32,7 +32,7 @@ namespace EntryScene
 
         /// <summary>
         /// 載入一張 sprite sheet 切好的全部 sprite，已依名稱尾碼編號排序
-        /// （<c>Miner_Run_0, Miner_Run_1, … Miner_Run_10</c>，數字比較而非字串比較）。
+        /// （<c>SsHeroDay_Run_0, SsHeroDay_Run_1, … SsHeroDay_Run_10</c>，數字比較而非字串比較）。
         /// 回傳的陣列是呼叫端自己的副本；sprite 本身常駐（AssetPackage 不卸載）。
         /// </summary>
         [Preserve]
@@ -41,7 +41,7 @@ namespace EntryScene
             return await GetLoader().LoadSpritesAsync(location);
         }
 
-        /// <summary>載入 TextAsset 的文字內容（例如 <c>Miner_sprites</c> 的 json）。</summary>
+        /// <summary>載入 TextAsset 的文字內容（例如 <c>SsHeroDay_sprites</c> 的 json）。</summary>
         [Preserve]
         public static async UniTask<string> LoadTextAsync(string location)
         {

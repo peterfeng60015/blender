@@ -22,7 +22,7 @@ namespace EntryScene
     ///   → LoadSubAssetsAsync&lt;Sprite&gt; / LoadAssetAsync&lt;TextAsset&gt;
     ///
     /// 產物是一般 AssetBundle（ScriptableBuildPipeline），收集器 PackTopDirectory：
-    /// Assets/Art/Glowshaft/Sprites/&lt;Name&gt;/ 每個子資料夾一包。
+    /// Assets/Art/Sidescroller/Sprites/&lt;Name&gt;/ 與 Data/&lt;Name&gt;/ 每個子資料夾一包。
     ///
     /// 與 CodePackage 不同，這個 package 載完**不卸載**：sprite 要一直被遊戲引用，
     /// 而且遊戲模組代碼會在遊戲進行中隨時要素材。
@@ -55,7 +55,7 @@ namespace EntryScene
         public string InternalVersion { get; private set; } = string.Empty;
 
         /// <summary>
-        /// 是否走 YooAsset 的編輯器模擬模式。Editor 預設是（直接讀 Assets/Art/Glowshaft/Sprites，
+        /// 是否走 YooAsset 的編輯器模擬模式。Editor 預設是（直接讀 Assets/Art/Sidescroller，
         /// 不必先打包）；Player 走 HostPlayMode（WebGL Player 走 WebPlayMode）。
         ///
         /// 想在 Editor 裡測遠端流程時，加 scripting define <c>ASSETPACKAGE_EDITOR_HOST_PLAY</c>
@@ -366,7 +366,7 @@ namespace EntryScene
         }
 
         /// <summary>
-        /// 依名稱最後一個 '_' 之後的整數排序（Miner_Run_2 在 Miner_Run_10 之前）。
+        /// 依名稱最後一個 '_' 之後的整數排序（SsHeroDay_Run_2 在 SsHeroDay_Run_10 之前）。
         /// 沒有數字尾碼的排在有尾碼的後面，彼此再以字串排序，讓結果固定。
         /// </summary>
         private static int CompareBySuffixNumber(Sprite a, Sprite b)

@@ -36,8 +36,8 @@ namespace EntryScene
             "Assets/DllBytes/ProjectDllBytes",
         };
 
-        // 與 AssetPackageCollectorSetup.SpritesCollectPath 一致（見共同規則的介面約定）。
-        private const string EditorSpritesFolder = "Assets/Art/Glowshaft/Sprites";
+        // 與 AssetPackageCollectorSetup.SidescrollerSpritesCollectPath 一致（見共同規則的介面約定）。
+        private const string EditorSpritesFolder = "Assets/Art/Sidescroller/Sprites";
 #endif
 
         [SerializeField]

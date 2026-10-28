@@ -328,8 +328,8 @@ public static class AssetPackageBuildTool
         // 外部工具（Blender 腳本）剛產出的資料夾在 AssetDatabase 匯入前會被當成不存在而整個 group 略過，先同步匯入
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
         AssetPackageCollectorSetup.Setup(specs);
-        if (!AssetDatabase.IsValidFolder(AssetPackageCollectorSetup.SpritesCollectPath))
-            throw new Exception($"[AssetPackageBuildTool] 收集路徑不存在：{AssetPackageCollectorSetup.SpritesCollectPath}，沒有素材可打包。");
+        if (!AssetDatabase.IsValidFolder(AssetPackageCollectorSetup.SidescrollerSpritesCollectPath))
+            throw new Exception($"[AssetPackageBuildTool] 收集路徑不存在：{AssetPackageCollectorSetup.SidescrollerSpritesCollectPath}，沒有素材可打包。");
         ValidateCollectFolders(AssetPackageCollectorSetup.ActiveGroups(specs));
 
         ApplyAssetPackageBuildPath(out _, out var bundleVersion, out var assetPackageDir);

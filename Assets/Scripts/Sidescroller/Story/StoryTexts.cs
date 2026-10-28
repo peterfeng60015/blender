@@ -4,7 +4,6 @@ namespace Sidescroller
     public static class StoryTexts
     {
         public const string GameTitle = "熱浪急件";
-        public const string GlowshaftTitle = "螢火礦坑";
         public const string MenuTitle = "選擇遊戲";
         public const string MenuHint = "↑↓：選擇　Enter：確定";
         public const string MenuHintTouch = "點一下遊戲名稱開始";
@@ -84,7 +83,7 @@ namespace Sidescroller
         /// <summary>全部固定文字（含觸控版關卡提示），給 Editor 檢查工具檢查缺字（KeyboardHints 是關卡資料原文，由關卡檢查涵蓋）。</summary>
         public static readonly string[] All = Concat(new[]
         {
-            GameTitle, GlowshaftTitle, MenuTitle, MenuHint, MenuHintTouch, MenuErrorPrefix,
+            GameTitle, MenuTitle, MenuHint, MenuHintTouch, MenuErrorPrefix,
             DialogueNext, DialogueHelp, DialogueHelpTouch,
             PauseTitle, PauseResume, PauseSkip, PauseRespawn, PauseQuit,
             ClearTitle, ClearTimePrefix, ClearRestart, ClearQuit,

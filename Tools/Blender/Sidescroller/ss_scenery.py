@@ -1,6 +1,6 @@
 """場景與介面：SsTiles、SsProps、SsLandmark、SsBgFar、SsBgMid、SsUi（多張變化：每一幀是一種變化）。
 
-做法同 Glowshaft：<Name>_Frames 的 Action 決定幀數，每種變化的物件用 hide_render 動畫只在自己那一幀顯示。
+做法：<Name>_Frames 的 Action 決定幀數，每種變化的物件用 hide_render 動畫只在自己那一幀顯示。
 可平鋪的素材（tile、背景）把會跨過格子邊的東西在左右（或上下）各複製一份，接縫才接得起來。
 """
 

@@ -47,7 +47,7 @@ MonoBehaviour:
         AssetTags: project
         UserData: 
   - PackageName: AssetPackage
-    PackageDesc: "Glowshaft\uFF0FSidescroller \u7F8E\u8853\u7D20\u6750\u8207\u8CC7\u6599\uFF08sprite
+    PackageDesc: "Sidescroller \u7F8E\u8853\u7D20\u6750\u8207\u8CC7\u6599\uFF08sprite
       sheet\u3001\u6CD5\u7DDA\u5716\u3001json\u3001txt\uFF09\uFF0CScriptableBuildPipeline"
     EnableAddressable: 1
     SupportExtensionless: 0
@@ -56,19 +56,6 @@ MonoBehaviour:
     AutoCollectShaders: 1
     IgnoreRuleName: NormalIgnoreRule
     Groups:
-    - GroupName: glowshaft_sprites
-      GroupDesc: "\u6BCF\u500B <Name> \u5B50\u8CC7\u6599\u593E\u4E00\u5305"
-      AssetTags: 
-      ActiveRuleName: EnableGroup
-      Collectors:
-      - CollectPath: Assets/Art/Glowshaft/Sprites
-        CollectorGUID: 
-        CollectorType: 0
-        AddressRuleName: AddressByFileName
-        PackRuleName: PackTopDirectory
-        FilterRuleName: CollectAll
-        AssetTags: 
-        UserData: 
     - GroupName: sidescroller_sprites
       GroupDesc: "\u6BCF\u500B <Name> \u5B50\u8CC7\u6599\u593E\u4E00\u5305\uFF08Ss
         \u958B\u982D\uFF09"

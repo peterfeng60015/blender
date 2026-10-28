@@ -114,20 +114,16 @@ namespace Sidescroller
         }
 
         #region 選定
-        internal const int ChoiceGlowshaft = 0;
-        internal const int ChoiceSidescroller = 1;
+        internal const int ChoiceSidescroller = 0;
 
         /// <summary>由 <see cref="GameSelectMenuView"/> 在選定時呼叫（不用 Action&lt;int&gt;，少一個值型別泛型）。</summary>
         internal static void OnChosen(int choice)
         {
-            Debug.Log($"[Sidescroller.GameSelectMenu] 選擇 {(choice == ChoiceGlowshaft ? StoryTexts.GlowshaftTitle : StoryTexts.GameTitle)}");
+            Debug.Log($"[Sidescroller.GameSelectMenu] 選擇 {StoryTexts.GameTitle}");
             DestroyMenu();
             try
             {
-                if (choice == ChoiceGlowshaft)
-                    Glowshaft.GlowshaftGame.Boot();
-                else
-                    SidescrollerGame.Boot();
+                SidescrollerGame.Boot();
             }
             catch (Exception ex)
             {
@@ -144,7 +140,7 @@ namespace Sidescroller
             }
         }
 
-        /// <summary>選單場景根物件全部關掉 → 切回 Entry（GlowshaftGame.Boot 用 GetActiveScene 當成 Entry）→ 非同步卸載。</summary>
+        /// <summary>選單場景根物件全部關掉 → 切回 Entry（遊戲的 Boot 以 GetActiveScene 為準）→ 非同步卸載。</summary>
         private static void DestroyMenu()
         {
             _view = null;
@@ -180,7 +176,7 @@ namespace Sidescroller
 #endif
         }
 
-        /// <summary>照 GlowshaftGame.HideEntryScene：關掉有 Camera／Canvas／Light／Light2D 的根物件與 EntrySceneController 的 OnGUI。</summary>
+        /// <summary>關掉有 Camera／Canvas／Light／Light2D 的根物件與 EntrySceneController 的 OnGUI。</summary>
         private static void HideEntryScene(Scene entry)
         {
             if (!entry.IsValid())

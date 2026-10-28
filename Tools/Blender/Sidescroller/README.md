@@ -1,7 +1,7 @@
 # 《熱浪急件》Sidescroller 美術素材
 
 全部素材都由 bpy 程式化建模（基本形體＋倒殼描邊），再用上一層的 `render_sprites.py` 以**純側視、單方向**渲染。
-和 Glowshaft 不同，這款**不用 `--albedo`**：3 階卡通色階直接烘進顏色 sheet（design.md §8.2），法線 sheet 照常輸出給局部光源點綴。
+這款**不用 `--albedo`**：3 階卡通色階直接烘進顏色 sheet（design.md §8.2），法線 sheet 照常輸出給局部光源點綴。
 
 ## 一鍵重做全部素材
 
@@ -14,7 +14,7 @@ python3 Tools/Blender/Sidescroller/render_all.py
 - 單幀 PNG 與每種素材的 Blender log 放在 `--work`（預設系統暫存資料夾的 `sidescroller_render/`），不會進專案。同時跑兩個 `render_all.py` 時請各給一個 `--work`。
 - 輸出到 `Assets/Art/Sidescroller/Sprites/<Name>/`。動作改名或刪掉時，舊的 sheet 會連同 `.meta` 一起清掉。
 
-接著在 Unity 匯入（和 Glowshaft 共用匯入工具，兩個根目錄一起處理）：選單 **Tools → Glowshaft → 匯入 Sprite Sheet**，或
+接著在 Unity 匯入：選單 **Tools → Sidescroller → 匯入 Sprite Sheet**，或
 
 ```bash
 "/Applications/Unity/Hub/Editor/6000.3.27f1/Unity.app/Contents/MacOS/Unity" -batchmode -quit -nographics -projectPath "$PWD" -executeMethod SpriteSheetImporter.ImportAndValidate -logFile <log>
