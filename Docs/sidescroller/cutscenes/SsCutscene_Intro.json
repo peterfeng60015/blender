@@ -1,0 +1,36 @@
+{
+  "id": "SsCutscene_Intro",
+  "version": 1,
+  "skippable": true,
+  "speakers": {
+    "narrator": { "name": "", "style": "narration" },
+    "hero": { "name": "阿甲", "portrait": "SsPortraitHero_Face", "side": "left" },
+    "boss": { "name": "河董", "portrait": "SsPortraitBoss_Face", "side": "right" },
+    "rat": { "name": "業務鼠", "portrait": "SsPortraitRat_Face", "side": "right" }
+  },
+  "commands": [
+    { "op": "wait", "time": 0.3 },
+    { "op": "banner", "text": "熱浪市　下午四點五十分", "time": 2.0 },
+    { "op": "say", "who": "narrator", "text": "熱浪市，夏天最熱的一天。" },
+    { "op": "face", "actor": "hero", "dir": "right" },
+    { "op": "say", "who": "hero", "text": "收件人……大口集團，河董事長。五點前送到。" },
+    { "op": "say", "who": "hero", "text": "還有十分鐘。夠了。" },
+
+    { "op": "camera", "mode": "pan", "x": 13, "y": 7, "time": 1.0 },
+    { "op": "camera", "mode": "shake", "strength": 0.1, "time": 0.3, "wait": false },
+    { "op": "say", "who": "boss", "style": "screen", "face": "happy", "text": "熱浪市的各位市民，午安！我是大口集團董事長，河大口！" },
+    { "op": "say", "who": "boss", "style": "screen", "face": "happy", "text": "從今天五點起，全市的包裹，只能交給大口物流！" },
+    { "op": "say", "who": "boss", "style": "screen", "face": "angry", "text": "其他快遞？哈哈哈！請自己滾回家吧！" },
+    { "op": "camera", "mode": "follow", "actor": "hero", "time": 0.8 },
+    { "op": "say", "who": "hero", "text": "……我本來就是用滾的。" },
+
+    { "op": "move", "actor": "rat_intro", "x": 8, "speed": 3 },
+    { "op": "say", "who": "rat", "actor": "rat_intro", "face": "angry", "text": "站住！你是哪一家的快遞？" },
+    { "op": "say", "who": "hero", "text": "龜速快遞。" },
+    { "op": "say", "who": "rat", "actor": "rat_intro", "face": "happy", "text": "龜速？聽起來就很慢！" },
+    { "op": "say", "who": "rat", "actor": "rat_intro", "face": "angry", "text": "董事長說了，大口以外的快遞，一律不准過！" },
+    { "op": "say", "who": "hero", "face": "angry", "text": "急件，不等人。讓開。" },
+    { "op": "say", "who": "rat", "actor": "rat_intro", "face": "surprised", "text": "你、你敢動手？我可是有名片的！" },
+    { "op": "anim", "actor": "rat_intro", "name": "Attack" }
+  ]
+}

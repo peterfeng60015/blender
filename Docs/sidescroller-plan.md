@@ -12,7 +12,8 @@
 | 主角 | 全程同一隻；攻擊手段與服裝由**劇情節點給予** |
 | 劇情演出 | 場景上的對話框＋過場演出（角色移動、鏡頭、停頓、特寫、發放能力）；**資料驅動的演出腳本（json）**，放進 YooAsset 資源包，可熱更 |
 | 對話語言 | 繁體中文，字型用專案內的思源黑體（已在 Git LFS） |
-| 舊遊戲 | 《螢火礦坑》**保留，兩個遊戲並存**；進入點加選單選擇要玩哪一個 |
+| 舊遊戲 | 《螢火礦坑》**保留，兩個遊戲並存**；進入點加選單選擇要玩哪一個。**2026-10-28 使用者決定選單只列《熱浪急件》**（原話「幫我把選項改成只有熱浪急件」）：螢火礦坑的程式與素材仍在專案裡，要放回選單時在 `GameSelectMenuView.Choices` 加一項 |
+| 網頁版 | **2026-10-28 追加**：使用者要求「在網頁上運行」並選完整支援 WebGL（保留代碼包／資源包更新）。Entry 加 `UNITY_WEBGL` 分支（YooAsset WebPlayMode＋WebNetworkFileSystem），出包工具 `Tools/WebGL/一鍵出 WebGL 包`，本機伺服器 `Tools/WebGL/serve.py`；已上傳 GCS 試玩，細節見看板 `handoff-webgl.md` |
 | 執行方式 | 子 session＋協調看板；先由設計 session 定稿，使用者確認後才分工開發 |
 
 ## 2. 遊戲內容草案（設計 session 會細化）
@@ -37,7 +38,7 @@
 - **服裝**：同一模型換材質或配件後重渲一套 sheet（例如 `Hero_Default_*`、`Hero_Ranger_*`），程式依目前服裝切換 SpriteSet。
 - **匯入**：`Assets/Editor/SpriteSheetImporter`（讀 json 自動切圖、掛法線）。
 - **載入**：YooAsset `AssetPackage`＋`EntryScene.GameAssets`；演出腳本 json 一併打包。
-- **遊戲入口**：`AppBootstrap.Run()` 先顯示「選擇遊戲」選單（螢火礦坑／新作），再進入對應遊戲。
+- **遊戲入口**：`AppBootstrap.Run()` 先顯示「選擇遊戲」選單，再進入對應遊戲（目前選單只列新作，見第 1 節）。
 
 ### 3.2 新增系統
 | 系統 | 內容 |
