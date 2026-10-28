@@ -17,15 +17,15 @@ using UnityEngine;
 ///   - InstallerController 沒有 GetCompatibleType()；Unity 版本不相容時，建構子內的
 ///     FindMatchedVersion 直接拋 NotSupportedException。
 ///   - 編譯輸出與裁剪後 AOT dll 固定在 Library/HybridCLR 底下，
-///     GetHotUpdateDllsOutputDirByTarget / GetAssembliesPostIl2CppStripDir 回傳的已是絕對路徑。
+///     SettingsUtil 的編譯輸出目錄與裁剪後 AOT 目錄 API 回傳的已是絕對路徑。
 /// </summary>
 public static class HybridCLRTools
 {
     private static readonly string aotBytesPath = "DllBytes/AotDllBytes";
     private static readonly string projectBytesPath = "DllBytes/ProjectDllBytes";
 
-    /// <summary>熱更組件：只有 Assembly-CSharp（入口 HotUpdateMain.Run），AOT 入口是 EntryScene asmdef。</summary>
-    private static readonly string[] HotUpdateAssemblies = { "Assembly-CSharp" };
+    /// <summary>模組組件：只有 Assembly-CSharp（入口 AppBootstrap.Run），AOT 入口是 EntryScene asmdef。</summary>
+    private static readonly string[] ModuleAssemblies = { "Assembly-CSharp" };
 
     // 產生檔放 Assets/HybridCLRGenerate/（.gitignore 已排除），與 HPS 相同；
     // 9.0.3 的預設值是 HybridCLR/Generate/，不在 .gitignore 內，每次 GenerateAll 都會冒出未追蹤檔。
@@ -116,15 +116,15 @@ public static class HybridCLRTools
     public static void SetupSettingsDllList()
     {
         // 9.0.0 起 HybridCLRSettings 沒有 patchAOTAssemblies 欄位（RELEASELOG「remove some fields of
-        // HybridCLRSettings」），AOT 清單改由本類別的 AotAssemblyNames 保存，這裡只剩熱更組件設定要寫。
-        SetupHotUpdateAssemblyDefinition();
+        // HybridCLRSettings」），AOT 清單改由本類別的 AotAssemblyNames 保存，這裡只剩模組組件設定要寫。
+        SetupModuleAssemblyDefinition();
     }
 
     [MenuItem("HybridCLR/Build/ProjectDll: 編譯 + 複製檔案", priority = 100)]
     public static void ProjectDllWork()
     {
-        // 先同步熱更組件設定，確保複製清單反映這份程式碼，而非 .asset 內殘留的狀態。與 AotDllWork 對稱。
-        SetupHotUpdateAssemblyDefinition();
+        // 先同步模組組件設定，確保複製清單反映這份程式碼，而非 .asset 內殘留的狀態。與 AotDllWork 對稱。
+        SetupModuleAssemblyDefinition();
 
         // 編譯 dll。先清空輸出目錄：9.0.3 的 CompileDllCommand.CompileDll 不檢查 CompilePlayerScripts 的結果，
         // player 專屬的編譯錯誤（例如 #if !UNITY_EDITOR 區塊）不會中斷流程；不清空的話會複製到上一次的舊 dll，
@@ -162,15 +162,15 @@ public static class HybridCLRTools
     }
 
     /// <summary>
-    /// 寫入本專案固定的熱更組件設定：啟用 HybridCLR、熱更組件只有 Assembly-CSharp、
-    /// 不使用 asmdef 形式的熱更組件、產生檔放 HybridCLRGenerate/。
+    /// 寫入本專案固定的模組組件設定：啟用 HybridCLR、模組組件只有 Assembly-CSharp、
+    /// 不使用 asmdef 形式的模組組件、產生檔放 HybridCLRGenerate/。
     /// </summary>
-    public static void SetupHotUpdateAssemblyDefinition()
+    public static void SetupModuleAssemblyDefinition()
     {
-        Debug.Log("設定 Settings 的熱更組件清單");
+        Debug.Log("設定 Settings 的模組組件清單");
         var settings = SettingsUtil.HybridCLRSettings;
         settings.enable = true;
-        settings.hotUpdateAssemblies = (string[])HotUpdateAssemblies.Clone();
+        settings.hotUpdateAssemblies = (string[])ModuleAssemblies.Clone();
         // 明確寫入空清單，清掉 .asset 內可能殘留的舊項目。
         settings.hotUpdateAssemblyDefinitions = new AssemblyDefinitionAsset[0];
         settings.outputLinkFile = OutputLinkFile;
@@ -207,7 +207,7 @@ public static class HybridCLRTools
 
     // 各平台共用的 AOT assembly 基底清單（最終會被排序，此處順序不影響結果）。
     // ⚠️ 只能列「會進 player 的組件」：沒進 player 的組件不會出現在裁剪後 AOT 目錄，
-    // CopyAndRenameDll 會因找不到 dll 而中斷。日後熱更程式用到其他 AOT 組件的泛型
+    // CopyAndRenameDll 會因找不到 dll 而中斷。日後模組程式用到其他 AOT 組件的泛型
     // （例如 YooAsset、UnityEngine.UI），再依 GenerateAll 產生的 Assets/HybridCLRGenerate/AOTGenericReferences.cs 補進來。
     private static readonly List<string> AotAssemblyListBase = new List<string>
     {
@@ -215,6 +215,8 @@ public static class HybridCLRTools
         "System.Core",
         "System",
         "UniTask",
+        "Unity.InputSystem",
+        "Unity.TextMeshPro",
         "UnityEngine.CoreModule",
         "mscorlib",
     };

@@ -26,7 +26,7 @@ namespace EntryScene
     }
 
     /// <summary>
-    /// CodePackage（HybridCLR 熱更 dll）的 YooAsset 載入封裝。
+    /// CodePackage（HybridCLR 模組 dll）的 YooAsset 載入封裝。
     ///
     /// **執行期唯一允許出現 YooAsset API 的檔案**：其餘程式碼（含 EntrySceneController）
     /// 一律只看得到 <see cref="DllAssetData"/>。日後 YooAsset 升版或整個抽換，改動點只有這裡。

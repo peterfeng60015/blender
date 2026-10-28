@@ -9,7 +9,7 @@ using YooAsset;
 using YooAsset.Editor;
 
 /// <summary>
-/// CodePackage（HybridCLR 熱更 dll）的 YooAsset 打包工具。
+/// CodePackage（HybridCLR 模組 dll）的 YooAsset 打包工具。
 ///
 /// 產物路徑：ServerData/{BuildTarget}/{bundleVersion}/CodePackage/
 ///   bundleVersion = PlayerSettings.bundleVersion（執行期對應 Application.version）
@@ -90,7 +90,7 @@ public static class CodePackageBuildTool
     /// </summary>
     public static string BuildAll(bool forceAotDllWork)
     {
-        // 先產 AOT 再編熱更：GenerateAll 也會編一次熱更 dll，放前面讓 ProjectDllWork 複製的是最後一次編譯結果。
+        // 先產 AOT 再編模組：GenerateAll 也會編一次模組 dll，放前面讓 ProjectDllWork 複製的是最後一次編譯結果。
         var missingAot = GetMissingAotDllBytes();
         var unexpectedAot = GetUnexpectedAotDllBytes();
         var stampMatched = HybridCLRTools.IsAotDllBytesForCurrentTarget();

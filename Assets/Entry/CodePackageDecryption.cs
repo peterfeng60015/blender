@@ -5,7 +5,7 @@ using YooAsset;
 namespace EntryScene
 {
     /// <summary>
-    /// CodePackage(HybridCLR 熱更 dll)的封裝/解封裝演算法:**LZMA 壓縮 + XOR 混淆**。
+    /// CodePackage(HybridCLR 模組 dll)的封裝/解封裝演算法:**LZMA 壓縮 + XOR 混淆**。
     ///
     /// 打包端 <c>CodePackageEncryption</c>(Assets/Editor/ 底下,editor-build 負責)呼叫 <see cref="Pack"/>,
     /// 載入端 <see cref="CodePackageDecryption"/> 呼叫 <see cref="Unpack"/>。兩個方向刻意寫在
