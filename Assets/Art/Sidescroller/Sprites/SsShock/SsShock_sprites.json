@@ -1,0 +1,27 @@
+{
+  "name": "SsShock",
+  "cellSize": 64,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 1.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.5
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Move",
+      "columns": 4,
+      "rows": 1,
+      "color": "SsShock_Move.png",
+      "normal": "SsShock_Move_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

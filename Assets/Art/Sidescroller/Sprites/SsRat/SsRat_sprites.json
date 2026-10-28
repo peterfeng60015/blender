@@ -1,0 +1,48 @@
+{
+  "name": "SsRat",
+  "cellSize": 128,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 2.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.1
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Idle",
+      "columns": 4,
+      "rows": 1,
+      "color": "SsRat_Idle.png",
+      "normal": "SsRat_Idle_n.png"
+    },
+    {
+      "action": "Walk",
+      "columns": 8,
+      "rows": 1,
+      "color": "SsRat_Walk.png",
+      "normal": "SsRat_Walk_n.png"
+    },
+    {
+      "action": "Attack",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsRat_Attack.png",
+      "normal": "SsRat_Attack_n.png"
+    },
+    {
+      "action": "Hurt",
+      "columns": 3,
+      "rows": 1,
+      "color": "SsRat_Hurt.png",
+      "normal": "SsRat_Hurt_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

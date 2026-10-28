@@ -1,0 +1,25 @@
+{
+  "id": "SsCutscene_BossIntro",
+  "version": 1,
+  "skippable": true,
+  "speakers": {
+    "hero": { "name": "阿甲", "portrait": "SsPortraitHero_Face", "side": "left" },
+    "boss": { "name": "河董", "portrait": "SsPortraitBoss_Face", "side": "right" }
+  },
+  "commands": [
+    { "op": "setFlag", "flag": "tmp_boss_gate_closed" },
+    { "op": "camera", "mode": "shake", "strength": 0.2, "time": 0.4 },
+    { "op": "face", "actor": "hero", "dir": "right" },
+    { "op": "camera", "mode": "zoom", "size": 6.75, "time": 0.8, "wait": false },
+    { "op": "camera", "mode": "pan", "x": 202, "y": 6.75, "time": 0.8 },
+    { "op": "anim", "actor": "boss", "name": "Stomp", "wait": true },
+    { "op": "camera", "mode": "shake", "strength": 0.3, "time": 0.5, "wait": false },
+    { "op": "say", "who": "boss", "face": "happy", "text": "哈！哈！哈！你就是那個不肯滾的快遞？" },
+    { "op": "say", "who": "hero", "text": "龜速快遞，阿甲。這裡有你的急件，請簽收。" },
+    { "op": "say", "who": "boss", "face": "angry", "text": "大口集團的東西，只收大口物流送的！" },
+    { "op": "say", "who": "boss", "face": "happy", "text": "你知道我這張大嘴，一天可以吃下幾家公司嗎？" },
+    { "op": "say", "who": "hero", "text": "不知道。我只知道，現在離五點還有三分鐘。" },
+    { "op": "say", "who": "boss", "face": "angry", "text": "那我就用三分鐘，把你吃掉！" },
+    { "op": "banner", "text": "大口集團董事長　河大口", "time": 1.5 }
+  ]
+}

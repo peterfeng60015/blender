@@ -1,0 +1,41 @@
+{
+  "name": "SsPigeon",
+  "cellSize": 128,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 2.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.1
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Fly",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsPigeon_Fly.png",
+      "normal": "SsPigeon_Fly_n.png"
+    },
+    {
+      "action": "Attack",
+      "columns": 4,
+      "rows": 1,
+      "color": "SsPigeon_Attack.png",
+      "normal": "SsPigeon_Attack_n.png"
+    },
+    {
+      "action": "Hurt",
+      "columns": 3,
+      "rows": 1,
+      "color": "SsPigeon_Hurt.png",
+      "normal": "SsPigeon_Hurt_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

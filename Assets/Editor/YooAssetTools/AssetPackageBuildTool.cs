@@ -240,44 +240,62 @@ public static class AssetPackageBuildTool
     /// <summary>
     /// 打包前先檢查素材規範（見 AssetPackageCollectorSetup 的類別註解），一次列出所有違規，
     /// 而不是等 YooAsset 在收集途中丟出只指向第一個違規的例外。
+    /// 檢查範圍是這次實際收集的全部根目錄；檔名唯一性跨根目錄檢查（整個 package 共用一個定位地址空間）。
+    /// 刻意比 YooAsset 嚴格：NormalIgnoreRule 會忽略的檔（無副檔名、.cs、Unity 不認得的類型、Editor／Gizmos 底下）
+    /// 這裡照樣算違規，因為收集路徑本來就不該放素材以外的檔（interfaces.md §6.1）。
     /// </summary>
-    private static void ValidateSpritesFolder()
+    internal static void ValidateCollectFolders(IReadOnlyList<AssetPackageCollectorSetup.GroupSpec> groups)
     {
-        var root = AssetPackageCollectorSetup.SpritesCollectPath;
         var problems = new List<string>();
-
-        foreach (var file in Directory.GetFiles(root))
-        {
-            var name = Path.GetFileName(file);
-            if (!name.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) && !IsIgnoredByUnity(name))
-                problems.Add($"根目錄不能直接放檔案：{root}/{name}");
-        }
-
         var addresses = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var dir in Directory.GetDirectories(root))
-        {
-            var dirName = Path.GetFileName(dir);
-            if (IsIgnoredByUnity(dirName))
-                continue;
-            if (dirName.Contains("."))
-                problems.Add($"子資料夾名稱不能含 '.'：{root}/{dirName}");
 
-            foreach (var file in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+        foreach (var spec in groups)
+        {
+            var root = spec.CollectPath;
+            if (!Directory.Exists(root))
+            {
+                problems.Add($"收集路徑不存在：{root}（group {spec.GroupName}）");
+                continue;
+            }
+
+            foreach (var file in Directory.GetFiles(root))
             {
                 var name = Path.GetFileName(file);
-                if (name.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) || IsIgnoredByUnity(name))
+                if (!name.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) && !IsIgnoredByUnity(name))
+                    problems.Add($"根目錄不能直接放檔案：{root}/{name}");
+            }
+
+            foreach (var dir in Directory.GetDirectories(root))
+            {
+                var dirName = Path.GetFileName(dir);
+                if (IsIgnoredByUnity(dirName))
                     continue;
-                var path = file.Replace('\\', '/');
-                // 隱藏資料夾裡的檔案（例如 art 匯入中途當掉留下的 <Name>/.staging/）Unity 不匯入、YooAsset 也收不到，
-                // 不算進撞名檢查
-                var relative = path.Substring(dir.Replace('\\', '/').Length + 1);
-                if (relative.Split('/').Any(IsIgnoredByUnity))
-                    continue;
-                var address = Path.GetFileNameWithoutExtension(name);
-                if (addresses.TryGetValue(address, out var other))
-                    problems.Add($"定位地址撞名 '{address}'：{other} 與 {path}");
-                else
-                    addresses.Add(address, path);
+                if (dirName.Contains("."))
+                    problems.Add($"子資料夾名稱不能含 '.'：{root}/{dirName}");
+                if (spec.FolderNeedsPrefix && spec.RequiredFilePrefix != null &&
+                    !dirName.StartsWith(spec.RequiredFilePrefix, StringComparison.Ordinal))
+                    problems.Add($"子資料夾名稱必須以 '{spec.RequiredFilePrefix}' 開頭：{root}/{dirName}");
+
+                var dirPath = dir.Replace('\\', '/');
+                foreach (var file in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    var name = Path.GetFileName(file);
+                    if (name.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) || IsIgnoredByUnity(name))
+                        continue;
+                    var path = file.Replace('\\', '/');
+                    // 隱藏資料夾裡的檔案（例如 art 匯入中途當掉留下的 <Name>/.staging/）Unity 不匯入、YooAsset 也收不到，
+                    // 不算進撞名與前綴檢查
+                    var relative = path.Substring(dirPath.Length + 1);
+                    if (relative.Split('/').Any(IsIgnoredByUnity))
+                        continue;
+                    var address = Path.GetFileNameWithoutExtension(name);
+                    if (spec.RequiredFilePrefix != null && !address.StartsWith(spec.RequiredFilePrefix, StringComparison.Ordinal))
+                        problems.Add($"檔名必須以 '{spec.RequiredFilePrefix}' 開頭：{path}");
+                    if (addresses.TryGetValue(address, out var other))
+                        problems.Add($"定位地址撞名 '{address}'：{other} 與 {path}");
+                    else
+                        addresses.Add(address, path);
+                }
             }
         }
 
@@ -301,10 +319,18 @@ public static class AssetPackageBuildTool
     /// <summary>收集器設定 → 配號 → YooAsset 打包 → 攤平搬入 ServerData。回傳本次的內部版號。</summary>
     public static string BuildAndDeployAssetPackage()
     {
-        AssetPackageCollectorSetup.Setup();
+        return BuildAndDeployAssetPackage(AssetPackageCollectorSetup.DefaultGroups);
+    }
+
+    /// <summary>同上，但以指定的 group 定義打包（測試用；呼叫端測完要自己 Setup() 還原設定）。</summary>
+    internal static string BuildAndDeployAssetPackage(IReadOnlyList<AssetPackageCollectorSetup.GroupSpec> specs)
+    {
+        // 外部工具（Blender 腳本）剛產出的資料夾在 AssetDatabase 匯入前會被當成不存在而整個 group 略過，先同步匯入
+        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+        AssetPackageCollectorSetup.Setup(specs);
         if (!AssetDatabase.IsValidFolder(AssetPackageCollectorSetup.SpritesCollectPath))
             throw new Exception($"[AssetPackageBuildTool] 收集路徑不存在：{AssetPackageCollectorSetup.SpritesCollectPath}，沒有素材可打包。");
-        ValidateSpritesFolder();
+        ValidateCollectFolders(AssetPackageCollectorSetup.ActiveGroups(specs));
 
         ApplyAssetPackageBuildPath(out _, out var bundleVersion, out var assetPackageDir);
 

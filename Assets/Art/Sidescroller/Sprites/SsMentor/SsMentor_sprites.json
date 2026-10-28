@@ -1,0 +1,34 @@
+{
+  "name": "SsMentor",
+  "cellSize": 128,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 2.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.1
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Idle",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsMentor_Idle.png",
+      "normal": "SsMentor_Idle_n.png"
+    },
+    {
+      "action": "Talk",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsMentor_Talk.png",
+      "normal": "SsMentor_Talk_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

@@ -1,0 +1,48 @@
+{
+  "name": "SsFx",
+  "cellSize": 128,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 2.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.5
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Hit",
+      "columns": 4,
+      "rows": 1,
+      "color": "SsFx_Hit.png",
+      "normal": "SsFx_Hit_n.png"
+    },
+    {
+      "action": "Poof",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsFx_Poof.png",
+      "normal": "SsFx_Poof_n.png"
+    },
+    {
+      "action": "Dust",
+      "columns": 4,
+      "rows": 1,
+      "color": "SsFx_Dust.png",
+      "normal": "SsFx_Dust_n.png"
+    },
+    {
+      "action": "Clank",
+      "columns": 3,
+      "rows": 1,
+      "color": "SsFx_Clank.png",
+      "normal": "SsFx_Clank_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

@@ -1,0 +1,62 @@
+{
+  "name": "SsHeroDay",
+  "cellSize": 128,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 2.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.1
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Idle",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsHeroDay_Idle.png",
+      "normal": "SsHeroDay_Idle_n.png"
+    },
+    {
+      "action": "Run",
+      "columns": 8,
+      "rows": 1,
+      "color": "SsHeroDay_Run.png",
+      "normal": "SsHeroDay_Run_n.png"
+    },
+    {
+      "action": "Jump",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsHeroDay_Jump.png",
+      "normal": "SsHeroDay_Jump_n.png"
+    },
+    {
+      "action": "Melee",
+      "columns": 5,
+      "rows": 1,
+      "color": "SsHeroDay_Melee.png",
+      "normal": "SsHeroDay_Melee_n.png"
+    },
+    {
+      "action": "Shoot",
+      "columns": 4,
+      "rows": 1,
+      "color": "SsHeroDay_Shoot.png",
+      "normal": "SsHeroDay_Shoot_n.png"
+    },
+    {
+      "action": "Hurt",
+      "columns": 3,
+      "rows": 1,
+      "color": "SsHeroDay_Hurt.png",
+      "normal": "SsHeroDay_Hurt_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

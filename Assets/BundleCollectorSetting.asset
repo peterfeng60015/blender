@@ -17,7 +17,7 @@ MonoBehaviour:
   UniqueBundleName: 0
   Packages:
   - PackageName: CodePackage
-    PackageDesc: "HybridCLR \u71B1\u66F4 dll\uFF08aot / project\uFF09\uFF0CArchiveFileBuildPipeline"
+    PackageDesc: "HybridCLR \u6A21\u7D44 dll\uFF08aot / project\uFF09\uFF0CArchiveFileBuildPipeline"
     EnableAddressable: 1
     SupportExtensionless: 0
     LocationToLower: 0
@@ -47,7 +47,8 @@ MonoBehaviour:
         AssetTags: project
         UserData: 
   - PackageName: AssetPackage
-    PackageDesc: "Glowshaft \u7F8E\u8853\u7D20\u6750\uFF08sprite sheet\u3001\u6CD5\u7DDA\u5716\u3001json\uFF09\uFF0CScriptableBuildPipeline"
+    PackageDesc: "Glowshaft\uFF0FSidescroller \u7F8E\u8853\u7D20\u6750\u8207\u8CC7\u6599\uFF08sprite
+      sheet\u3001\u6CD5\u7DDA\u5716\u3001json\u3001txt\uFF09\uFF0CScriptableBuildPipeline"
     EnableAddressable: 1
     SupportExtensionless: 0
     LocationToLower: 0
@@ -61,6 +62,33 @@ MonoBehaviour:
       ActiveRuleName: EnableGroup
       Collectors:
       - CollectPath: Assets/Art/Glowshaft/Sprites
+        CollectorGUID: 
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackTopDirectory
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 
+    - GroupName: sidescroller_sprites
+      GroupDesc: "\u6BCF\u500B <Name> \u5B50\u8CC7\u6599\u593E\u4E00\u5305\uFF08Ss
+        \u958B\u982D\uFF09"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Art/Sidescroller/Sprites
+        CollectorGUID: 
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackTopDirectory
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 
+    - GroupName: sidescroller_data
+      GroupDesc: "Cutscenes\u3001Levels \u5404\u4E00\u5305\uFF08\u6A94\u540D Ss \u958B\u982D\uFF09"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Art/Sidescroller/Data
         CollectorGUID: 
         CollectorType: 0
         AddressRuleName: AddressByFileName

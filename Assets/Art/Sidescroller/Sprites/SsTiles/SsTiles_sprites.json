@@ -1,0 +1,27 @@
+{
+  "name": "SsTiles",
+  "cellSize": 64,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 1.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.5
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Idle",
+      "columns": 7,
+      "rows": 1,
+      "color": "SsTiles_Idle.png",
+      "normal": "SsTiles_Idle_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": true
+}

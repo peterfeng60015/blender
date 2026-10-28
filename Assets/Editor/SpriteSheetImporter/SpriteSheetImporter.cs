@@ -20,7 +20,8 @@ using UnityEngine;
 /// 只用 Unity 內建型別，沒有任何 MonoBehaviour／ScriptableObject；放在獨立的 Editor 組件，不依賴
 /// Assembly-CSharp（注意：專案裡任何組件有編譯錯誤時，batchmode 仍會在執行 -executeMethod 前中止）。
 ///
-/// 這個資料夾歸素材管線所有：不合規的 json、PPU 不一致都算失敗。
+/// 根目錄有兩個：《螢火礦坑》的 Assets/Art/Glowshaft/Sprites 與新作的 Assets/Art/Sidescroller/Sprites。
+/// 兩個資料夾都歸素材管線所有：不合規的 json、PPU 不一致（兩邊合起來算）都算失敗。
 ///
 /// batchmode（素材更新後重跑即可）：
 ///   Unity -batchmode -quit -nographics -projectPath &lt;專案&gt; \
@@ -30,6 +31,9 @@ using UnityEngine;
 public static class SpriteSheetImporter
 {
     public const string SpritesRoot = "Assets/Art/Glowshaft/Sprites";
+    public const string SidescrollerSpritesRoot = "Assets/Art/Sidescroller/Sprites";
+    /// <summary>會被匯入與檢查的全部根目錄；不存在的會略過。</summary>
+    public static readonly string[] SpritesRoots = { SpritesRoot, SidescrollerSpritesRoot };
     public const string NormalMapName = "_NormalMap";
     private const string LogPrefix = "[SpriteSheetImporter] ";
 
@@ -364,11 +368,13 @@ public static class SpriteSheetImporter
 
     private static IEnumerable<string> FindManifests()
     {
-        if (!AssetDatabase.IsValidFolder(SpritesRoot))
+        string[] roots = SpritesRoots.Where(AssetDatabase.IsValidFolder).ToArray();
+        if (roots.Length == 0)
             return Enumerable.Empty<string>();
-        return AssetDatabase.FindAssets("t:TextAsset", new[] { SpritesRoot })
+        return AssetDatabase.FindAssets("t:TextAsset", roots)
             .Select(AssetDatabase.GUIDToAssetPath)
             .Where(p => p.EndsWith("_sprites.json", StringComparison.Ordinal))
+            .Distinct()
             .OrderBy(p => p, StringComparer.Ordinal);
     }
 
@@ -390,7 +396,7 @@ public static class SpriteSheetImporter
         else if (m.sheets.Any(s => string.IsNullOrEmpty(s.color) || string.IsNullOrEmpty(s.normal) || s.rows <= 0 || s.columns <= 0))
             problem = "有 sheet 缺 color／normal／rows／columns";
         else if (m.pixelsPerUnit <= 0)
-            problem = "沒有 pixelsPerUnit（請用 Tools/Blender/Glowshaft/render_all.py 產生，不要直接放 render_sprites.py 的原始輸出）";
+            problem = "沒有 pixelsPerUnit（請用 Tools/Blender/<遊戲>/render_all.py 產生，不要直接放 render_sprites.py 的原始輸出）";
         return problem == null ? m : null;
     }
 

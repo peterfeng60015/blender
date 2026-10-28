@@ -11,6 +11,6 @@ public static class AppBootstrap
     {
         Debug.Log($"[AppBootstrap] 遊戲模組代碼已執行（Assembly: {typeof(AppBootstrap).Assembly.GetName().Name}，" +
                   $"App 版本: {Application.version}）");
-        Glowshaft.GlowshaftGame.Boot();
+        Sidescroller.GameSelectMenu.Boot();
     }
 }

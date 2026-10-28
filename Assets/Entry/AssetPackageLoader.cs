@@ -15,6 +15,7 @@ namespace EntryScene
     ///
     /// 流程（與 CodePackage 相同，差在 bundle 類型與沒有加密）：
     ///   Initialize（Player：HostPlayMode，遠端根 = {serverRoot}/{平台}/{Application.version}/AssetPackage；
+    ///               WebGL Player：WebPlayMode，沒有本地沙盒快取，bundle 在第一次載入時才抓；
     ///               Editor：EditorSimulateMode + VirtualAssetBundle，不必先打包）
     ///   → RequestPackageVersionAsync → LoadPackageManifestAsync → 清快取
     ///   → CreateResourceDownloader（下載缺檔）
@@ -55,7 +56,7 @@ namespace EntryScene
 
         /// <summary>
         /// 是否走 YooAsset 的編輯器模擬模式。Editor 預設是（直接讀 Assets/Art/Glowshaft/Sprites，
-        /// 不必先打包）；Player 一律走 HostPlayMode。
+        /// 不必先打包）；Player 走 HostPlayMode（WebGL Player 走 WebPlayMode）。
         ///
         /// 想在 Editor 裡測遠端流程時，加 scripting define <c>ASSETPACKAGE_EDITOR_HOST_PLAY</c>
         /// （與 CodePackage 的 <c>CODEPACKAGE_EDITOR_HOST_PLAY</c> 各自獨立），沙盒快取在 Library/yoo 底下。
@@ -149,6 +150,22 @@ namespace EntryScene
             {
                 EditorFileSystemParameters =
                     FileSystemParameters.CreateDefaultEditorFileSystemParameters(buildResult.PackageRootDirectory),
+            };
+#elif UNITY_WEBGL
+            // WebGL：WebPlayMode + WebNetworkFileSystem，理由與限制同 CodePackageLoader 的 WebGL 分支
+            // （沒有預下載，下載量恆為 0；斷點續傳參數不能加）。
+            // 不加密的 AssetBundle 走 UnityWebRequestAssetBundle，DisableUnityWebCache 維持預設 false：
+            // 以 manifest 的 FileHash 當版本鍵存進 Unity 的 WebGL 快取（IndexedDB），第二次開頁不必重抓；
+            // 檔名帶 hash，換版自然換鍵。bundle 在遊戲第一次要素材時才抓（GameAssets 都是非同步 API）。
+            var webParams = FileSystemParameters.CreateDefaultWebNetworkFileSystemParameters(
+                new AssetPackageRemoteService(_remoteRoot));
+            // 重試次數加上限，理由見 WebDownloadRetryPolicy。
+            webParams.AddParameter(EFileSystemParameter.DownloadRetryPolicy, new WebDownloadRetryPolicy());
+
+            return new WebPlayModeOptions
+            {
+                WebServerFileSystemParameters = null,
+                WebNetworkFileSystemParameters = webParams,
             };
 #else
             // 聯機模式：沒有內建包，只掛沙盒快取檔案系統。一般 AssetBundle、不加密，不需要解密器。

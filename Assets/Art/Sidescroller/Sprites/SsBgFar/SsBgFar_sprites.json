@@ -1,0 +1,27 @@
+{
+  "name": "SsBgFar",
+  "cellSize": 1024,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 16.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.5
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Idle",
+      "columns": 1,
+      "rows": 1,
+      "color": "SsBgFar_Idle.png",
+      "normal": "SsBgFar_Idle_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": true
+}

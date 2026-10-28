@@ -1,0 +1,35 @@
+{
+  "id": "SsCutscene_BossDefeat",
+  "version": 1,
+  "skippable": true,
+  "keepFade": true,
+  "speakers": {
+    "hero": { "name": "阿甲", "portrait": "SsPortraitHero_Face", "side": "left" },
+    "boss": { "name": "河董", "portrait": "SsPortraitBoss_Face", "side": "right" },
+    "rat": { "name": "業務鼠", "portrait": "SsPortraitRat_Face", "side": "right", "style": "offscreen" }
+  },
+  "commands": [
+    { "op": "anim", "actor": "boss", "name": "Hurt", "loop": true },
+    { "op": "camera", "mode": "shake", "strength": 0.2, "time": 0.4, "wait": false },
+    { "op": "wait", "time": 0.8 },
+    { "op": "move", "actor": "hero", "target": "boss", "gap": 2.2, "speed": 3 },
+    { "op": "face", "actor": "hero", "toward": "boss" },
+    { "op": "face", "actor": "boss", "toward": "hero" },
+    { "op": "say", "who": "boss", "face": "surprised", "text": "不、不可能……我可是大口集團的董事長……" },
+    { "op": "say", "who": "hero", "text": "董事長，請簽收。" },
+    { "op": "say", "who": "boss", "face": "angry", "text": "哼！簽就簽！我倒要看看是什麼東西……" },
+    { "op": "anim", "actor": "boss", "name": "Idle", "loop": true },
+    { "op": "wait", "time": 0.5 },
+    { "op": "say", "who": "boss", "face": "surprised", "text": "……「熱浪市政府　壟斷罰單」？！" },
+    { "op": "say", "who": "boss", "face": "surprised", "text": "罰、罰款金額……這個零也太多了吧！" },
+    { "op": "say", "who": "hero", "face": "happy", "text": "四點五十九分，送達。" },
+    { "op": "say", "who": "hero", "text": "龜速快遞，從來沒有遲到過。" },
+    { "op": "say", "who": "rat", "face": "surprised", "text": "董、董事長！外面還有一百張罰單要簽收！" },
+    { "op": "say", "who": "boss", "face": "surprised", "text": "哇啊啊啊——！" },
+    { "op": "camera", "mode": "shake", "strength": 0.3, "time": 0.6, "wait": false },
+    { "op": "fade", "to": 1, "time": 1.0 },
+    { "op": "banner", "text": "急件送達！", "time": 2.0 },
+    { "op": "banner", "text": "未完待續", "time": 1.5 },
+    { "op": "setFlag", "flag": "stage_clear" }
+  ]
+}

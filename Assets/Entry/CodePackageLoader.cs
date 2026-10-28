@@ -33,6 +33,7 @@ namespace EntryScene
     ///
     /// 流程：
     ///   Initialize（Player：HostPlayMode，遠端根 = {serverRoot}/{平台}/{Application.version}/CodePackage；
+    ///               WebGL Player：WebPlayMode，沒有本地快取，下載量恆為 0、載入時才抓；
     ///               Editor：EditorSimulateMode，不必先打包）
     ///   → RequestPackageVersionAsync（讀 CodePackage.version 指針，得內部版號）
     ///   → LoadPackageManifestAsync（載該版 manifest）
@@ -85,7 +86,7 @@ namespace EntryScene
 
         /// <summary>
         /// 是否走 YooAsset 的編輯器模擬模式。Editor 預設是（直接讀 Assets/DllBytes 底下的原始
-        /// .dll.bytes，不必先打包、不經解密器）；Player 一律走 HostPlayMode。
+        /// .dll.bytes，不必先打包、不經解密器）；Player 走 HostPlayMode（WebGL Player 走 WebPlayMode）。
         ///
         /// 想在 Editor 裡測遠端流程（下載、斷點續傳、解密）時，加 scripting define
         /// <c>CODEPACKAGE_EDITOR_HOST_PLAY</c>，Editor 就改走與 Player 相同的 HostPlayMode
@@ -189,6 +190,32 @@ namespace EntryScene
             {
                 EditorFileSystemParameters =
                     FileSystemParameters.CreateDefaultEditorFileSystemParameters(buildResult.PackageRootDirectory),
+            };
+#elif UNITY_WEBGL
+            // WebGL：SandboxFileSystem 在 WebGL 直接以「does not support the WebGL platform」失敗
+            // （3.0.6：SFSInitializeOperation 第 40 行），改用 WebPlayMode + WebNetworkFileSystem。
+            // 沒有內建包，所以 WebServerFileSystemParameters 留 null（FileSystemHost 會略過 null）。
+            //
+            // 與 HostPlayMode 的差異（3.0.6 已查證）：
+            // - 沒有本地快取與預下載：IWebPreloadStrategy 是 internal 介面，外部掛不上，
+            //   IsDownloadRequired 恆為 false，CreateDownloaderAndGetSize 恆回 0；
+            //   歸檔改在 LoadDllsAsync 第一次載入時才以 bytes 請求抓下來（LoadWebArchiveBundleOperation），
+            //   重抓靠瀏覽器 HTTP 快取。
+            // - 解密器拿到的 args.FileData 是下載好的位元組（不是 null），CodePackageDecryption 已先複製再就地解，
+            //   LZMA 是純 C# 同步解壓，WebGL 單執行緒也能跑（歸檔約 1 MB，只卡一幀）。
+            // - ClearCacheAsync 是空操作，ClearStaleCacheAsync 照呼叫無妨。
+            // - 斷點續傳參數（DownloadResumeMinimumSize）WebNetworkFileSystem 不認得，會丟 ArgumentException，不能加。
+            var webParams = FileSystemParameters.CreateDefaultWebNetworkFileSystemParameters(
+                new CodePackageRemoteService(_remoteRoot));
+            // 參數鍵同樣必須是 ArchiveBundleDecryptor（WebNetworkBundleCache 只把這個傳給歸檔載入）。
+            webParams.AddParameter(EFileSystemParameter.ArchiveBundleDecryptor, new CodePackageDecryption());
+            // Web 載入時下載的重試次數預設沒有上限，斷網時會永遠卡住（見 WebDownloadRetryPolicy）。
+            webParams.AddParameter(EFileSystemParameter.DownloadRetryPolicy, new WebDownloadRetryPolicy());
+
+            return new WebPlayModeOptions
+            {
+                WebServerFileSystemParameters = null,
+                WebNetworkFileSystemParameters = webParams,
             };
 #else
             // 聯機模式：沒有內建包（dll 一律走遠端下載），只掛沙盒快取檔案系統。

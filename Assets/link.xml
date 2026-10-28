@@ -1,0 +1,40 @@
+<!--
+  IL2CPP 裁剪保留清單。
+  遊戲模組代碼（Assembly-CSharp）在出包時不在 player 裡，AOT 端沒有人引用的 Unity 型別與成員會被裁掉，
+  執行期 AddComponent 會回 null 或找不到成員。這裡保留遊戲模組代碼會用到、但 Entry 場景與 AOT 組件沒有引用的部分。
+  來源：《熱浪急件》各模組交接檔列出的清單（player、enemy、level、story）。
+-->
+<linker>
+  <!-- 物理 2D：Rigidbody2D、各種 Collider2D、CompositeCollider2D、PlatformEffector2D、PhysicsMaterial2D、ContactFilter2D、Physics2D 查詢 -->
+  <assembly fullname="UnityEngine.Physics2DModule" preserve="all" />
+
+  <!-- URP 2D 光源（Light2D 用反射設私有欄位 m_NormalMapQuality／m_NormalMapDistance） -->
+  <assembly fullname="Unity.RenderPipelines.Universal.Runtime">
+    <type fullname="UnityEngine.Rendering.Universal.Light2D" preserve="all" />
+  </assembly>
+
+  <!-- UI：TMP 文字元件與成員（maxVisibleCharacters、ForceMeshUpdate、textInfo 等）、CanvasScaler、CanvasGroup、RectTransformUtility -->
+  <assembly fullname="Unity.TextMeshPro">
+    <type fullname="TMPro.TMP_Text" preserve="all" />
+    <type fullname="TMPro.TextMeshProUGUI" preserve="all" />
+    <type fullname="TMPro.TMP_TextInfo" preserve="all" />
+    <type fullname="TMPro.TMP_FontAsset" preserve="all" />
+  </assembly>
+  <assembly fullname="UnityEngine.UI">
+    <type fullname="UnityEngine.UI.CanvasScaler" preserve="all" />
+    <type fullname="UnityEngine.UI.Image" preserve="all" />
+  </assembly>
+  <assembly fullname="UnityEngine.UIModule">
+    <type fullname="UnityEngine.CanvasGroup" preserve="all" />
+    <type fullname="UnityEngine.Canvas" preserve="all" />
+    <type fullname="UnityEngine.RectTransformUtility" preserve="all" />
+  </assembly>
+
+  <!-- 其他：AudioListener（遊戲相機）、Regex（sprite json 讀 fps） -->
+  <assembly fullname="UnityEngine.AudioModule">
+    <type fullname="UnityEngine.AudioListener" preserve="all" />
+  </assembly>
+  <assembly fullname="System">
+    <type fullname="System.Text.RegularExpressions.Regex" preserve="all" />
+  </assembly>
+</linker>

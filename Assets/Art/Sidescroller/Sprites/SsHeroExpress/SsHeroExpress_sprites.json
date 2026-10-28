@@ -1,0 +1,62 @@
+{
+  "name": "SsHeroExpress",
+  "cellSize": 128,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 2.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.1
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Idle",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsHeroExpress_Idle.png",
+      "normal": "SsHeroExpress_Idle_n.png"
+    },
+    {
+      "action": "Run",
+      "columns": 8,
+      "rows": 1,
+      "color": "SsHeroExpress_Run.png",
+      "normal": "SsHeroExpress_Run_n.png"
+    },
+    {
+      "action": "Jump",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsHeroExpress_Jump.png",
+      "normal": "SsHeroExpress_Jump_n.png"
+    },
+    {
+      "action": "Melee",
+      "columns": 5,
+      "rows": 1,
+      "color": "SsHeroExpress_Melee.png",
+      "normal": "SsHeroExpress_Melee_n.png"
+    },
+    {
+      "action": "Shoot",
+      "columns": 4,
+      "rows": 1,
+      "color": "SsHeroExpress_Shoot.png",
+      "normal": "SsHeroExpress_Shoot_n.png"
+    },
+    {
+      "action": "Hurt",
+      "columns": 3,
+      "rows": 1,
+      "color": "SsHeroExpress_Hurt.png",
+      "normal": "SsHeroExpress_Hurt_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

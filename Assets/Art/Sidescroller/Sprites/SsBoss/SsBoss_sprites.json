@@ -1,0 +1,55 @@
+{
+  "name": "SsBoss",
+  "cellSize": 320,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 5.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.06
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Idle",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsBoss_Idle.png",
+      "normal": "SsBoss_Idle_n.png"
+    },
+    {
+      "action": "Charge",
+      "columns": 8,
+      "rows": 1,
+      "color": "SsBoss_Charge.png",
+      "normal": "SsBoss_Charge_n.png"
+    },
+    {
+      "action": "Spray",
+      "columns": 6,
+      "rows": 1,
+      "color": "SsBoss_Spray.png",
+      "normal": "SsBoss_Spray_n.png"
+    },
+    {
+      "action": "Stomp",
+      "columns": 8,
+      "rows": 1,
+      "color": "SsBoss_Stomp.png",
+      "normal": "SsBoss_Stomp_n.png"
+    },
+    {
+      "action": "Hurt",
+      "columns": 3,
+      "rows": 1,
+      "color": "SsBoss_Hurt.png",
+      "normal": "SsBoss_Hurt_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

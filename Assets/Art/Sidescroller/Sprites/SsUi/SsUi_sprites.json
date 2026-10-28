@@ -1,0 +1,27 @@
+{
+  "name": "SsUi",
+  "cellSize": 64,
+  "directions": [
+    "a000"
+  ],
+  "fps": 12.0,
+  "orthoScale": 1.0,
+  "suggestedPixelsPerUnit": 64.0,
+  "pivot": [
+    0.5,
+    0.5
+  ],
+  "elevation": 0.0,
+  "albedo": false,
+  "sheets": [
+    {
+      "action": "Idle",
+      "columns": 8,
+      "rows": 1,
+      "color": "SsUi_Idle.png",
+      "normal": "SsUi_Idle_n.png"
+    }
+  ],
+  "pixelsPerUnit": 64,
+  "tile": false
+}

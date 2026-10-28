@@ -41,7 +41,7 @@ namespace EntryScene
 #endif
 
         [SerializeField]
-        [Tooltip("CodePackage／AssetPackage 產物的伺服器根目錄。實際遠端根目錄 = {serverRoot}/{平台名}/{Application.version}/{CodePackage|AssetPackage}")]
+        [Tooltip("CodePackage／AssetPackage 產物的伺服器根目錄。實際遠端根目錄 = {serverRoot}/{平台名}/{Application.version}/{CodePackage|AssetPackage}。WebGL 另可用相對路徑與同源的 ?serverRoot= 網址參數（見 ResolveWebServerRoot）")]
         private string serverRoot = "https://storage.googleapis.com/peter_hybridclr_test/blender";
 
         private CodePackageLoader codePackageLoader = null;
@@ -136,6 +136,8 @@ namespace EntryScene
                 return IntPtr.Size == 8 ? "StandaloneWindows64" : "StandaloneWindows";
 #elif UNITY_STANDALONE_LINUX
                 return "StandaloneLinux64";
+#elif UNITY_WEBGL
+                return "WebGL";
 #else
                 Debug.LogWarning($"[Startup] 未定義平台資料夾對應，改用 Application.platform: {Application.platform}");
                 return Application.platform.ToString();
@@ -145,11 +147,128 @@ namespace EntryScene
 
         /// <summary>{serverRoot}/{平台名}/{Application.version}/CodePackage</summary>
         private string CodePackageRootUrl =>
-            $"{serverRoot.TrimEnd('/')}/{PlatformBuildTargetDir}/{Application.version}/{CodePackageFolderName}";
+            $"{EffectiveServerRoot.TrimEnd('/')}/{PlatformBuildTargetDir}/{Application.version}/{CodePackageFolderName}";
 
         /// <summary>{serverRoot}/{平台名}/{Application.version}/AssetPackage</summary>
         private string AssetPackageRootUrl =>
-            $"{serverRoot.TrimEnd('/')}/{PlatformBuildTargetDir}/{Application.version}/{AssetPackageLoader.PackageName}";
+            $"{EffectiveServerRoot.TrimEnd('/')}/{PlatformBuildTargetDir}/{Application.version}/{AssetPackageLoader.PackageName}";
+
+        /// <summary>
+        /// 實際使用的伺服器根目錄。WebGL Player 以外的平台恆為 <see cref="serverRoot"/>，行為不變。
+        /// WebGL Player 見 <see cref="ResolveWebServerRoot"/>。
+        /// </summary>
+        private string EffectiveServerRoot
+        {
+            get
+            {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // 頁面網址與序列化值在執行期間都不會變，解析一次就好（也免得 log 重複印）。
+                if (_webServerRoot == null)
+                    _webServerRoot = ResolveWebServerRoot(serverRoot, Application.absoluteURL);
+                return _webServerRoot;
+#else
+                return serverRoot;
+#endif
+            }
+        }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        private const string ServerRootQueryKey = "serverRoot";
+
+        /// <summary>WebGL Player 解析後的伺服器根目錄快取（見 <see cref="EffectiveServerRoot"/>）。</summary>
+        private string _webServerRoot = null;
+
+        /// <summary>
+        /// WebGL：決定伺服器根目錄。
+        /// 1. 頁面網址帶 <c>?serverRoot=…</c>，而且解析後與頁面**同源**（同 scheme、host、port）、
+        ///    路徑又落在**頁面所在目錄底下**時用它，給本機測試與測試站用
+        ///    （例如 <c>?serverRoot=ServerData</c>，與遊戲放在同一個伺服器）。
+        ///    ⚠️ 這個值決定要載入哪份遊戲模組代碼，若接受任意網址，別人只要給一條連結就能讓玩家
+        ///    在我們的網域上執行他的 dll。只比同源還不夠：GCS 這類路徑式網址（storage.googleapis.com/&lt;bucket&gt;/…）
+        ///    所有 bucket 都同源，所以再要求路徑在頁面目錄之下。不符的值一律忽略並警告。
+        /// 2. 否則用序列化的 <see cref="serverRoot"/>；它是相對路徑（不含 ://）時以頁面網址為基準解析，
+        ///    方便把 ServerData 與遊戲部署在同一個網站。絕對網址照用（跨源時伺服器要開 CORS）。
+        ///    序列化值不受第 1 點的限制：它是我們自己出包時決定的。
+        /// 解析失敗時退回序列化值原樣，交給後面的初始化報錯。
+        /// </summary>
+        private static string ResolveWebServerRoot(string serialized, string pageUrl)
+        {
+            Uri page;
+            if (string.IsNullOrEmpty(pageUrl) || !Uri.TryCreate(pageUrl, UriKind.Absolute, out page))
+            {
+                Debug.LogWarning($"[Startup] 無法解析頁面網址 '{pageUrl}'，serverRoot 照原樣使用");
+                return serialized;
+            }
+
+            var queryValue = GetQueryParameter(page, ServerRootQueryKey);
+            if (!string.IsNullOrEmpty(queryValue))
+            {
+                var overridden = ResolveAgainstPage(page, queryValue);
+                if (overridden != null && IsUnderPageDirectory(overridden, page))
+                {
+                    var root = overridden.GetLeftPart(UriPartial.Path).TrimEnd('/');
+                    Debug.Log($"[Startup] 使用網址參數 {ServerRootQueryKey}：{root}");
+                    return root;
+                }
+                Debug.LogWarning($"[Startup] 網址參數 {ServerRootQueryKey}='{queryValue}' 不在頁面所在的同源目錄底下，已忽略");
+            }
+
+            if (!string.IsNullOrEmpty(serialized) && !serialized.Contains("://"))
+            {
+                var relative = ResolveAgainstPage(page, serialized);
+                if (relative != null)
+                    return relative.GetLeftPart(UriPartial.Path).TrimEnd('/');
+            }
+            return serialized;
+        }
+
+        /// <summary>
+        /// 以頁面網址為基準解析 value。先當 http(s) 絕對網址，否則當相對路徑。
+        /// 不直接用 <c>Uri.TryCreate(baseUri, string, …)</c>：那個多載內部以 RelativeOrAbsolute 判斷，
+        /// Mono 系的 BCL 在非 Windows 上可能把「/ServerData」當成 file:///ServerData。
+        /// </summary>
+        private static Uri ResolveAgainstPage(Uri page, string value)
+        {
+            Uri absolute;
+            if (Uri.TryCreate(value, UriKind.Absolute, out absolute) &&
+                (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+                return absolute;
+
+            Uri relative, combined;
+            if (Uri.TryCreate(value, UriKind.Relative, out relative) && Uri.TryCreate(page, relative, out combined))
+                return combined;
+            return null;
+        }
+
+        /// <summary>candidate 與頁面同源，而且路徑在頁面所在目錄（最後一個 / 之前）底下。</summary>
+        private static bool IsUnderPageDirectory(Uri candidate, Uri page)
+        {
+            if (Uri.Compare(candidate, page, UriComponents.SchemeAndServer, UriFormat.Unescaped,
+                    StringComparison.OrdinalIgnoreCase) != 0)
+                return false;
+            var pagePath = page.AbsolutePath;
+            var pageDir = pagePath.Substring(0, pagePath.LastIndexOf('/') + 1);
+            // AbsolutePath 已把 ../ 正規化掉，比的是跳脫後的形式，兩邊一致。
+            return candidate.AbsolutePath.StartsWith(pageDir, StringComparison.Ordinal);
+        }
+
+        /// <summary>取查詢字串裡第一個同名參數的值（已 URL 解碼）；沒有就回 null。</summary>
+        private static string GetQueryParameter(Uri uri, string key)
+        {
+            var query = uri.Query;
+            if (string.IsNullOrEmpty(query))
+                return null;
+            foreach (var pair in query.TrimStart('?').Split('&'))
+            {
+                var index = pair.IndexOf('=');
+                var name = Uri.UnescapeDataString(index < 0 ? pair : pair.Substring(0, index));
+                if (name != key)
+                    continue;
+                return index < 0 ? string.Empty : Uri.UnescapeDataString(pair.Substring(index + 1).Replace('+', ' '));
+            }
+            return null;
+        }
+#endif
 
         private async UniTask RunStartupFlowAsync()
         {
@@ -389,7 +508,12 @@ namespace EntryScene
             Debug.Log(total > 0
                 ? $"開始下載：CodePackage {FormatBytes(codePackageSize)} + AssetPackage {FormatBytes(assetPackageSize)}" +
                   $" = {FormatBytes(total)}"
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // WebGL 沒有預下載（見 CodePackageLoader 的 WebGL 分支），下載量恆為 0，檔案在載入時才抓。
+                : "[DownloadContent] WebGL 不預先下載，載入時才向伺服器取檔");
+#else
                 : "[DownloadContent] 全部命中本地快取，不需下載");
+#endif
             if (total > 0)
                 SetStatus($"下載更新：0 B / {FormatBytes(total)}");
 
