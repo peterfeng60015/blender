@@ -10,13 +10,14 @@ using UnityEngine;
 namespace EntryScene
 {
     /// <summary>
-    /// Entry 場景的開機流程（HPS EntrySceneController 的精簡版，只保留 CodePackage 熱更 dll 載入）：
-    ///   初始化 CodePackage → 算下載量 → 下載 → 載 AOT metadata → 依序 Assembly.Load（Assembly-CSharp 最後）
-    ///   → 卸載 CodePackage 歸檔 → 反射呼叫 Assembly-CSharp 的 <c>HotUpdateMain.Run()</c>。
-    /// 任何一步失敗都停在錯誤畫面，按「重試」重跑整條流程。
+    /// Entry 場景的開機流程（HPS EntrySceneController 的精簡版）：
+    ///   初始化 CodePackage 與 AssetPackage → 合計下載量 → 依序下載兩包 → 載 AOT metadata
+    ///   → 依序 Assembly.Load（Assembly-CSharp 最後）→ 卸載 CodePackage 歸檔
+    ///   → 把 AssetPackage 掛上 <see cref="GameAssets"/> → 反射呼叫 Assembly-CSharp 的 <c>AppBootstrap.Run()</c>。
+    /// 任何一步失敗都停在錯誤畫面，按「重試」重跑整條流程（已完成的 dll 載入與 AssetPackage 會跳過）。
     ///
     /// HPS 裡的 Addressables、gate、VersionDataModel、hacker、catalog、hash json、Boot 場景都不搬
-    /// （本專案沒有 Addressables 可載 Boot 場景，所以改用反射呼叫熱更入口）。
+    /// （本專案沒有 Addressables 可載 Boot 場景，所以改用反射呼叫遊戲入口）。
     /// 進度只用 log 加上 OnGUI 的簡單文字顯示，不依賴場景裡的 UI 物件。
     /// </summary>
     public class EntrySceneController : MonoBehaviour
@@ -24,8 +25,8 @@ namespace EntryScene
         private const string AssemblyCSharpName = "Assembly-CSharp";
         private const string AssemblyCSharpDllName = AssemblyCSharpName + ".dll";
         private const string CodePackageFolderName = CodePackageLoader.PackageName;
-        private const string HotUpdateEntryTypeName = "HotUpdateMain";
-        private const string HotUpdateEntryMethodName = "Run";
+        private const string GameEntryTypeName = "AppBootstrap";
+        private const string GameEntryMethodName = "Run";
 
 #if UNITY_EDITOR
         // 與 editor-build 的 CodePackageCollectorSetup 收集路徑一致（見共同規則的介面約定）。
@@ -34,22 +35,26 @@ namespace EntryScene
             "Assets/DllBytes/AotDllBytes",
             "Assets/DllBytes/ProjectDllBytes",
         };
+
+        // 與 AssetPackageCollectorSetup.SpritesCollectPath 一致（見共同規則的介面約定）。
+        private const string EditorSpritesFolder = "Assets/Art/Glowshaft/Sprites";
 #endif
 
         [SerializeField]
-        [Tooltip("CodePackage 產物的伺服器根目錄。實際遠端根目錄 = {serverRoot}/{平台名}/{Application.version}/CodePackage")]
+        [Tooltip("CodePackage／AssetPackage 產物的伺服器根目錄。實際遠端根目錄 = {serverRoot}/{平台名}/{Application.version}/{CodePackage|AssetPackage}")]
         private string serverRoot = "https://storage.googleapis.com/peter_hybridclr_test/blender";
 
         private CodePackageLoader codePackageLoader = null;
+        private AssetPackageLoader assetPackageLoader = null;
         private bool _startupFlowRunning = false;
-        private bool _hotUpdateEntered = false;
+        private bool _gameEntered = false;
 
         /// <summary>Player 下 Assembly.Load 進來的 Assembly-CSharp；Editor 下恆為 null。</summary>
-        private Assembly _hotUpdateAssembly = null;
+        private Assembly _moduleAssembly = null;
 
         /// <summary>
         /// AOT／project dll 全部載入成功時的 CodePackage 內部版號；還沒全部載完為 null。
-        /// 不為 null 時 Retry 直接跳過整段 CodePackage（不再連網），只重試熱更入口之前的步驟。
+        /// 不為 null 時 Retry 直接跳過整段 CodePackage（不再連網），只重試遊戲入口之前的步驟。
         /// </summary>
         private string _dllsLoadedForVersion = null;
 
@@ -142,6 +147,10 @@ namespace EntryScene
         private string CodePackageRootUrl =>
             $"{serverRoot.TrimEnd('/')}/{PlatformBuildTargetDir}/{Application.version}/{CodePackageFolderName}";
 
+        /// <summary>{serverRoot}/{平台名}/{Application.version}/AssetPackage</summary>
+        private string AssetPackageRootUrl =>
+            $"{serverRoot.TrimEnd('/')}/{PlatformBuildTargetDir}/{Application.version}/{AssetPackageLoader.PackageName}";
+
         private async UniTask RunStartupFlowAsync()
         {
             if (_startupFlowRunning)
@@ -152,6 +161,7 @@ namespace EntryScene
             _startupFlowRunning = true;
             try
             {
+                var updateCode = false;
                 if (_dllsLoadedForVersion != null)
                 {
                     // 前一輪 dll 已全部載入、是後面的步驟失敗；dll 無法換版，不必再連網。
@@ -163,23 +173,41 @@ namespace EntryScene
                 }
                 else
                 {
-                    await UpdateContentAsync();
+                    updateCode = true;
                 }
 
-                SetStatus("進入熱更代碼");
-                EnterHotUpdate();
-                SetStatus("熱更代碼已啟動");
+                var updateAsset = false;
+                if (GameAssets.IsReady)
+                {
+                    // 前一輪 AssetPackage 已就緒、是後面的步驟失敗；保留同一份，不再連網。
+                    Debug.Log("[Startup] AssetPackage 已於前次嘗試就緒，Retry 跳過 AssetPackage");
+                }
+                else if (ShouldSkipAssetPackageInEditor())
+                {
+                    SetStatus("Editor：美術素材資料夾未就緒，略過 AssetPackage（GameAssets 不可用，原因見 Console 警告）");
+                }
+                else
+                {
+                    updateAsset = true;
+                }
+
+                if (updateCode || updateAsset)
+                    await UpdateContentAsync(updateCode, updateAsset);
+
+                SetStatus("進入遊戲模組");
+                EnterGame();
+                SetStatus("遊戲模組代碼已啟動");
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[Startup] 發生未預期例外，中止開機流程: {ex}");
-                // 反射呼叫（Editor 模擬建置、熱更入口）丟出的是 TargetInvocationException，
+                // 反射呼叫（Editor 模擬建置、遊戲入口）丟出的是 TargetInvocationException，
                 // 外層訊息沒有資訊量，顯示內層的。
                 var shown = ex is TargetInvocationException && ex.InnerException != null ? ex.InnerException : ex;
-                if (_hotUpdateEntered)
+                if (_gameEntered)
                 {
-                    // 熱更入口已呼叫過（Run() 本身拋例外）：重跑不會再進一次，提供重試沒有意義。
-                    SetStatus($"熱更代碼執行失敗，請重啟 App：{shown.Message}");
+                    // 遊戲入口已呼叫過（Run() 本身拋例外）：重跑不會再進一次，提供重試沒有意義。
+                    SetStatus($"遊戲模組代碼執行失敗，請重啟 App：{shown.Message}");
                 }
                 else
                 {
@@ -195,7 +223,7 @@ namespace EntryScene
 
         /// <summary>
         /// Editor 模擬模式下，DllBytes 的收集資料夾還沒準備好時，略過整段 CodePackage，
-        /// 直接進熱更入口（Editor 裡 Assembly-CSharp 本來就已經載入了）。「沒準備好」指：
+        /// 直接進遊戲入口（Editor 裡 Assembly-CSharp 本來就已經載入了）。「沒準備好」指：
         /// - 任一收集資料夾不存在：YooAsset 收集器要求每個收集路徑都是 AssetDatabase 認得的資料夾，
         ///   否則丟「Collect path is invalid」（3.0.6：BundleCollector.CheckConfigError，BundleCollector.cs 第 87-89 行）。
         ///   例如 fresh checkout 只產生過 ProjectDllBytes 時，模擬建置必失敗、重試也無效。
@@ -229,15 +257,62 @@ namespace EntryScene
 #endif
         }
 
-        private async UniTask UpdateContentAsync()
+        /// <summary>
+        /// Editor 模擬模式下，美術素材收集資料夾不存在或沒有任何檔案時略過 AssetPackage
+        /// （模擬建置會因 Collect path is invalid／PackAssetListIsEmpty 失敗，重試也無效；理由同
+        /// <see cref="ShouldSkipCodePackageInEditor"/>）。略過時 <see cref="GameAssets.IsReady"/> 維持 false。
+        /// Player 恆回傳 false：素材缺了就是產物不完整，照常失敗、讓玩家重試。
+        /// </summary>
+        private static bool ShouldSkipAssetPackageInEditor()
         {
-            var codePackageSize = await PrepareCodePackageAsync();
-            await DownloadCodePackageAsync(codePackageSize);
-            await LoadHotUpdateDllsAsync();
+#if UNITY_EDITOR
+            if (!AssetPackageLoader.IsEditorSimulate)
+                return false;
+            if (!System.IO.Directory.Exists(EditorSpritesFolder))
+            {
+                Debug.LogWarning($"[Startup] Editor：{EditorSpritesFolder} 不存在（art 素材尚未落地），略過 AssetPackage。");
+                return true;
+            }
+            var hasAny = System.IO.Directory.EnumerateFiles(EditorSpritesFolder, "*", System.IO.SearchOption.AllDirectories)
+                // .meta 與 .DS_Store 之類的隱藏檔不是素材，AssetDatabase 也不會收集
+                .Any(f => !f.EndsWith(".meta", StringComparison.OrdinalIgnoreCase) &&
+                          !System.IO.Path.GetFileName(f).StartsWith(".", StringComparison.Ordinal));
+            if (!hasAny)
+            {
+                Debug.LogWarning($"[Startup] Editor：{EditorSpritesFolder} 底下沒有任何素材，略過 AssetPackage。");
+                return true;
+            }
+            return false;
+#else
+            return false;
+#endif
+        }
 
-            // dll 都載完了，讓 YooAsset 放掉歸檔與逐檔副本（細節見 CodePackageLoader.UnloadAsync）。
-            // 必須顯式呼叫——handle.Release() 只減 RefCount，不會卸載資源包。
-            await codePackageLoader.UnloadAsync();
+        /// <summary>
+        /// 兩包都先初始化、問出下載量，合計後一次顯示，再依序下載；全部下載完才載 dll、掛 GameAssets。
+        /// 先下載完再載 dll：任一包下載失敗時還沒有任何不可逆的 Assembly.Load。
+        /// </summary>
+        private async UniTask UpdateContentAsync(bool updateCode, bool updateAsset)
+        {
+            var codePackageSize = updateCode ? await PrepareCodePackageAsync() : 0L;
+            var assetPackageSize = updateAsset ? await PrepareAssetPackageAsync() : 0L;
+            await DownloadContentAsync(updateCode, codePackageSize, updateAsset, assetPackageSize);
+
+            if (updateCode)
+            {
+                await LoadModuleDllsAsync();
+
+                // dll 都載完了，讓 YooAsset 放掉歸檔與逐檔副本（細節見 CodePackageLoader.UnloadAsync）。
+                // 必須顯式呼叫——handle.Release() 只減 RefCount，不會卸載資源包。
+                await codePackageLoader.UnloadAsync();
+            }
+
+            if (updateAsset)
+            {
+                // AssetPackage 不卸載：遊戲模組代碼整個遊戲期間都會透過 GameAssets 載素材。
+                GameAssets.Attach(assetPackageLoader);
+                Debug.Log($"[Startup] AssetPackage 就緒（內部版號 {assetPackageLoader.InternalVersion}），GameAssets 可用");
+            }
         }
 
         /// <summary>
@@ -273,51 +348,88 @@ namespace EntryScene
         }
 
         /// <summary>
-        /// 下載 CodePackage（HybridCLR 熱更 dll）。
-        /// 斷點續傳、失敗重試、CRC 校驗都由 YooAsset 內建，這裡只負責顯示進度。
+        /// 建立這次要用的 AssetPackage loader，並問出它要下載多少。重建前先銷毀舊的，理由同 <see cref="PrepareCodePackageAsync"/>。
         /// </summary>
-        private async UniTask DownloadCodePackageAsync(long codePackageSize)
+        /// <returns>AssetPackage 這次要下載的位元組數（已在本地快取的不計入）。</returns>
+        private async UniTask<long> PrepareAssetPackageAsync()
         {
-            // ⚠️ 「有沒有檔案要下載」交給 CodePackageLoader.DownloadAsync() 依 downloader 的
-            // TotalDownloadCount 判斷，這裡不自己先判一次就提前返回，免得兩層的拆除行為分歧。
-            Debug.Log(codePackageSize > 0
-                ? $"開始下載 [CodePackage]: {FormatBytes(codePackageSize)}"
-                : "[DownloadCodePackage] 全部命中本地快取，不需下載");
-            if (codePackageSize > 0)
-                SetStatus($"下載 CodePackage：0 B / {FormatBytes(codePackageSize)}");
+            if (!AssetPackageLoader.IsEditorSimulate && string.IsNullOrWhiteSpace(serverRoot))
+                throw new InvalidOperationException("EntrySceneController.serverRoot 未設定");
 
-            var lastLoggedPercent = -1;
-            await codePackageLoader.DownloadAsync(
-                onProgress: null,
-                onBytesChanged: (downloaded, total) =>
-                {
-                    _progress = total > 0 ? downloaded * 1f / total : 0f;
-                    _status = $"下載 CodePackage：{FormatBytes(downloaded)} / {FormatBytes(total)}";
-                    // log 只在每跨 10% 時記一次，免得洗版。
-                    var percent = (int)(_progress * 10) * 10;
-                    if (percent != lastLoggedPercent)
-                    {
-                        lastLoggedPercent = percent;
-                        Debug.Log($"[DownloadCodePackage] {percent}%（{FormatBytes(downloaded)} / {FormatBytes(total)}）");
-                    }
-                });
+            if (assetPackageLoader != null)
+            {
+                // 走到這裡代表上一輪沒有成功掛上 GameAssets（成功的話 IsReady 為 true，不會重跑），
+                // 保險起見仍先卸下，避免遊戲模組代碼拿到正在銷毀的 loader。
+                GameAssets.Attach(null);
+                await assetPackageLoader.DestroyAsync();
+                assetPackageLoader = null;
+            }
 
-            _progress = 0f;
-            if (codePackageSize > 0)
-                Debug.Log("結束下載 [CodePackage]");
+            SetStatus("初始化 AssetPackage");
+            Debug.Log($"[開始載入] AssetPackageRootUrl: {AssetPackageRootUrl}" +
+                      (AssetPackageLoader.IsEditorSimulate ? "（Editor 模擬模式不使用）" : string.Empty));
+            assetPackageLoader = new AssetPackageLoader(AssetPackageRootUrl);
+            await assetPackageLoader.InitializeAsync();
+
+            var assetPackageSize = assetPackageLoader.CreateDownloaderAndGetSize();
+            Debug.Log($"assetPackageSize: {FormatBytes(assetPackageSize)}" +
+                      $"（內部版號 {assetPackageLoader.InternalVersion}）");
+            return assetPackageSize;
         }
 
         /// <summary>
-        /// 把 AOT 與熱更 dll 載進執行期。已載入的個別 dll 會跳過——
+        /// 依序下載 CodePackage 與 AssetPackage，進度以兩包合計顯示。
+        /// 斷點續傳、失敗重試、CRC 校驗都由 YooAsset 內建，這裡只負責顯示進度。
+        /// </summary>
+        private async UniTask DownloadContentAsync(bool updateCode, long codePackageSize, bool updateAsset, long assetPackageSize)
+        {
+            // ⚠️ 「有沒有檔案要下載」交給各 loader 的 DownloadAsync() 依 downloader 的
+            // TotalDownloadCount 判斷，這裡不自己先判一次就提前返回，免得兩層的拆除行為分歧。
+            var total = codePackageSize + assetPackageSize;
+            Debug.Log(total > 0
+                ? $"開始下載：CodePackage {FormatBytes(codePackageSize)} + AssetPackage {FormatBytes(assetPackageSize)}" +
+                  $" = {FormatBytes(total)}"
+                : "[DownloadContent] 全部命中本地快取，不需下載");
+            if (total > 0)
+                SetStatus($"下載更新：0 B / {FormatBytes(total)}");
+
+            var lastLoggedPercent = -1;
+            void Report(long downloaded)
+            {
+                _progress = total > 0 ? downloaded * 1f / total : 0f;
+                _status = $"下載更新：{FormatBytes(downloaded)} / {FormatBytes(total)}";
+                // log 只在每跨 10% 時記一次，免得洗版。
+                var percent = (int)(_progress * 10) * 10;
+                if (percent != lastLoggedPercent)
+                {
+                    lastLoggedPercent = percent;
+                    Debug.Log($"[DownloadContent] {percent}%（{FormatBytes(downloaded)} / {FormatBytes(total)}）");
+                }
+            }
+
+            if (updateCode)
+                await codePackageLoader.DownloadAsync(
+                    onProgress: null,
+                    onBytesChanged: (downloaded, _) => Report(downloaded));
+            if (updateAsset)
+                await assetPackageLoader.DownloadAsync((downloaded, _) => Report(codePackageSize + downloaded));
+
+            _progress = 0f;
+            if (total > 0)
+                Debug.Log("結束下載");
+        }
+
+        /// <summary>
+        /// 把 AOT 與模組 dll 載進執行期。已載入的個別 dll 會跳過——
         /// 理由見 <see cref="_loadedAotDlls"/> 的欄位註解。
         /// </summary>
-        private async UniTask LoadHotUpdateDllsAsync()
+        private async UniTask LoadModuleDllsAsync()
         {
             var version = codePackageLoader.InternalVersion;
             SetStatus("載入 AOT metadata");
             await LoadAotDlls();
             Debug.Log("Load AotDlls finish.");
-            SetStatus("載入熱更 dll");
+            SetStatus("載入模組 dll");
             await LoadProjectDlls();
             Debug.Log("Load ProjectDlls finish.");
             _dllsLoadedForVersion = version;
@@ -353,8 +465,8 @@ namespace EntryScene
         }
 
         /// <summary>
-        /// 載入 project Dll：其他熱更 dll 先、Assembly-CSharp 最後。
-        /// Editor 下不呼叫 Assembly.Load（Assembly-CSharp 等熱更組件本來就已載入，重複載入會出現兩份同名組件），
+        /// 載入 project Dll：其他模組 dll 先、Assembly-CSharp 最後。
+        /// Editor 下不呼叫 Assembly.Load（Assembly-CSharp 等模組組件本來就已載入，重複載入會出現兩份同名組件），
         /// 只走一遍 YooAsset 的取值流程並記 log。
         /// </summary>
         private async UniTask LoadProjectDlls()
@@ -390,7 +502,7 @@ namespace EntryScene
             }
             var loaded = LoadProjectDllOnce(asset_assemblyCSharp);
             if (loaded != null)
-                _hotUpdateAssembly = loaded;
+                _moduleAssembly = loaded;
         }
 
         /// <summary>載入一顆 project dll；已於前次嘗試載入過就略過並回傳 null。</summary>
@@ -429,44 +541,44 @@ namespace EntryScene
         }
 
         /// <summary>
-        /// 以反射呼叫 Assembly-CSharp 裡的 <c>HotUpdateMain.Run()</c>（public static、無命名空間）。
+        /// 以反射呼叫 Assembly-CSharp 裡的 <c>AppBootstrap.Run()</c>（public static、無命名空間）。
         /// Player 下的 Assembly-CSharp 是上面 Assembly.Load 進來的那一份；Editor 下是原本就載入的那一份。
-        /// 熱更入口只會進一次：Run() 丟例外時不提供重試，畫面改提示重啟 App（見 RunStartupFlowAsync 的 catch）。
+        /// 遊戲入口只會進一次：Run() 丟例外時不提供重試，畫面改提示重啟 App（見 RunStartupFlowAsync 的 catch）。
         /// </summary>
-        private void EnterHotUpdate()
+        private void EnterGame()
         {
-            if (_hotUpdateEntered)
+            if (_gameEntered)
             {
-                Debug.LogWarning("[Startup] 熱更入口已呼叫過，不重複呼叫");
+                Debug.LogWarning("[Startup] 遊戲入口已呼叫過，不重複呼叫");
                 return;
             }
 
             // Player 優先用剛 Assembly.Load 進來的那份；Editor（或 dll 已在前一輪載入、這輪跳過時）
             // 才退回依名稱在 AppDomain 裡找。
-            var assembly = _hotUpdateAssembly ?? AppDomain.CurrentDomain.GetAssemblies()
+            var assembly = _moduleAssembly ?? AppDomain.CurrentDomain.GetAssemblies()
                 .FirstOrDefault(a => a.GetName().Name == AssemblyCSharpName);
             if (assembly == null)
-                throw new Exception($"找不到已載入的 {AssemblyCSharpName}，無法進入熱更入口");
+                throw new Exception($"找不到已載入的 {AssemblyCSharpName}，無法進入遊戲入口");
 
-            var type = assembly.GetType(HotUpdateEntryTypeName);
+            var type = assembly.GetType(GameEntryTypeName);
             if (type == null)
-                throw new Exception($"{AssemblyCSharpName} 裡找不到型別 {HotUpdateEntryTypeName}");
+                throw new Exception($"{AssemblyCSharpName} 裡找不到型別 {GameEntryTypeName}");
 
-            var method = type.GetMethod(HotUpdateEntryMethodName, BindingFlags.Public | BindingFlags.Static,
+            var method = type.GetMethod(GameEntryMethodName, BindingFlags.Public | BindingFlags.Static,
                 null, Type.EmptyTypes, null);
             if (method == null)
-                throw new Exception($"找不到 public static {HotUpdateEntryTypeName}.{HotUpdateEntryMethodName}()");
+                throw new Exception($"找不到 public static {GameEntryTypeName}.{GameEntryMethodName}()");
 
-            Debug.Log($"[Startup] 呼叫 {HotUpdateEntryTypeName}.{HotUpdateEntryMethodName}()");
-            _hotUpdateEntered = true;
+            Debug.Log($"[Startup] 呼叫 {GameEntryTypeName}.{GameEntryMethodName}()");
+            _gameEntered = true;
             try
             {
                 method.Invoke(null, null);
             }
             catch (TargetInvocationException ex) when (ex.InnerException != null)
             {
-                // 拆掉反射的外殼、保留原本的堆疊，讓錯誤訊息直接指向熱更代碼。
-                Debug.LogError($"[Startup] {HotUpdateEntryTypeName}.{HotUpdateEntryMethodName}() 拋出例外");
+                // 拆掉反射的外殼、保留原本的堆疊，讓錯誤訊息直接指向遊戲模組代碼。
+                Debug.LogError($"[Startup] {GameEntryTypeName}.{GameEntryMethodName}() 拋出例外");
                 ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
             }
         }

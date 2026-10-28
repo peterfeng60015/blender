@@ -53,12 +53,15 @@ public static class CodePackageCollectorSetup
 
         // 移除同名 package 後重建，確保結果與這份程式碼一致，
         // 不會殘留手動編輯過的舊 group / collector。
+        // 重建後放回原本的位置（沒有才加在最後）：與 AssetPackageCollectorSetup 輪流執行時，
+        // package 順序才不會來回變動、讓 BundleCollectorSetting.asset 產生無意義的 diff。
+        var index = setting.Packages.FindIndex(p => p.PackageName == PackageName);
         setting.Packages.RemoveAll(p => p.PackageName == PackageName);
 
         var package = new BundleCollectorPackage
         {
             PackageName = PackageName,
-            PackageDesc = "HybridCLR 熱更 dll（aot / project），ArchiveFileBuildPipeline",
+            PackageDesc = "HybridCLR 模組 dll（aot / project），ArchiveFileBuildPipeline",
             // 以定位地址（檔名）載入：AddressByFileName 對
             // Assets/DllBytes/ProjectDllBytes/Assembly-CSharp.dll.bytes 取出的位址是 "Assembly-CSharp.dll"。
             EnableAddressable = true,
@@ -78,7 +81,10 @@ public static class CodePackageCollectorSetup
         group.Collectors.Add(CreateCollector(ProjectCollectPath, ProjectTag));
         package.Groups.Add(group);
 
-        setting.Packages.Add(package);
+        if (index >= 0 && index <= setting.Packages.Count)
+            setting.Packages.Insert(index, package);
+        else
+            setting.Packages.Add(package);
 
         // 設定合法性由 YooAsset 自己把關（收集路徑不存在、規則類別名稱打錯會在這裡就炸，
         // 而不是拖到打包當下才發現）
