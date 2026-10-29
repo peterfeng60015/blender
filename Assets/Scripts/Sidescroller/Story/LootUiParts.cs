@@ -344,13 +344,32 @@ namespace Sidescroller
             _other.anchoredPosition = new Vector2(leftSide ? x : x + Width + Gap, top);
         }
 
+        /// <summary>
+        /// 把顏色寫成 RRGGBB。不用 ColorUtility.ToHtmlStringRGB：已發佈的主體（AOT 端）沒有引用它而被裁掉，
+        /// 只更新代碼包時呼叫會找不到方法。
+        /// </summary>
+        private void AppendHexRgb(Color color)
+        {
+            Color32 c = color;
+            AppendHexByte(c.r);
+            AppendHexByte(c.g);
+            AppendHexByte(c.b);
+        }
+
+        private void AppendHexByte(byte value)
+        {
+            const string digits = "0123456789ABCDEF";
+            _sb.Append(digits[value >> 4]).Append(digits[value & 0xF]);
+        }
+
         private float Fill(TextMeshProUGUI text, ItemData item, string header)
         {
             _sb.Length = 0;
             if (header != null)
                 _sb.Append("<size=24><color=#B8B0C8>").Append(header).Append("</color></size>\n");
-            _sb.Append("<size=38><color=#").Append(ColorUtility.ToHtmlStringRGB(ItemData.RarityColor(item.Rarity))).Append('>')
-                .Append(item.DisplayName).Append("</color></size>\n");
+            _sb.Append("<size=38><color=#");
+            AppendHexRgb(ItemData.RarityColor(item.Rarity));
+            _sb.Append('>').Append(item.DisplayName).Append("</color></size>\n");
             _sb.Append("<color=#A9A3B8>").Append(item.KindName).Append("</color>");
             foreach (var line in item.DescribeBase())
                 _sb.Append('\n').Append(line);
