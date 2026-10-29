@@ -55,7 +55,7 @@ namespace Sidescroller
             var sprite = SsArt.Get(PropLocation).Variant(VendingVariant);
             var body = LevelBuilder.PlaceSprite(transform, "Body", sprite, Vector2.zero, true, SsSorting.Props + 1);
             body.color = Tint;
-            var top = sprite != null ? sprite.bounds.size.y : 2f;
+            var top = sprite != null ? OpaqueTop(sprite) : 2f;
 
             _glowTexture = CreateGlowTexture(32);
             _glowSprite = Sprite.Create(_glowTexture, new Rect(0f, 0f, _glowTexture.width, _glowTexture.height), new Vector2(0.5f, 0.5f), 32f);
@@ -66,6 +66,23 @@ namespace Sidescroller
             _glowRenderer.sprite = _glowSprite;
             _glowRenderer.sortingOrder = SsSorting.Props + 2;
             _glowRenderer.color = new Color(1f, 0.82f, 0.3f, 0.9f);
+        }
+
+        /// <summary>
+        /// 販賣機實際有畫的最高點，相對 sprite 底部（Body 用 PlaceSprite 底部對齊放在原點）。
+        /// Tight mesh 的頂點只包住不透明的部分，sheet 上方留白不算進去；用 bounds.size.y 會把留白算進去，光點會飄在半空中。
+        /// FullRect mesh 時等同 bounds.size.y。
+        /// </summary>
+        private static float OpaqueTop(Sprite sprite)
+        {
+            var vertices = sprite.vertices;
+            var bottom = sprite.bounds.min.y;
+            if (vertices == null || vertices.Length == 0)
+                return sprite.bounds.max.y - bottom;
+            var top = float.NegativeInfinity;
+            for (var i = 0; i < vertices.Length; i++)
+                top = Mathf.Max(top, vertices[i].y);
+            return top - bottom;
         }
 
         private void Update()

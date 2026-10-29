@@ -773,3 +773,35 @@ player ─ICutsceneActor、GameSession→ story 的演出
 - **story**：四份腳本全部跑完、跳過、中途回選單都不會留下黑幕或鎖住輸入；`grant` 後 HUD 更新；字型找得到；Editor 檢查工具能抓出缺字與未知指令。
 - **art**：每個 location 的幀數、pivot、PPU 符合 §6.4；兩套主角 sheet 幀數一致；Glowshaft 素材匯入結果不變。
 - **assetpkg**：Sidescroller 資料夾不存在時 Glowshaft 照樣能打包；全部 `Ss*` location 進包；`.staging` 等暫存不進包。
+
+---
+
+## 11. 掉落、背包、裝備與強化（2026-10-29 加入）
+
+設計見 `loot-design.md`。實作分三塊：data（`Contracts/LootTypes.cs`、`LootState.cs`、`Enhance.cs`、`GearStats.cs`、`Loot/LootTables.cs`、主角與敵人）、pickup（`Loot/LootDrops.cs`、`LootDrop.cs`、`LootVisuals.cs`、`Story/LootHudView.cs`、`LootFlyHook.cs`）、ui（`Story/LootScreens.cs`、`InventoryView.cs`、`EnhanceView.cs`、`LootUiParts.cs`、`Loot/SupplyStation.cs`、`SsInput`／`SsTouch` 的新按鍵）。
+
+### 11.1 跨模組介面
+
+- **道具**：`ItemData`（種類、名稱、稀有度、`Count`、`Level`、`Affixes`、佔格 `Width`／`Height`、`Slot`、說明文字）。參考型別、以實例比對身分；`Count`、`Level` 只由 `LootState`／`Enhance` 改。稀有度顏色一律用 `ItemData.RarityColor`。
+- **背包與裝備欄**：`session.Loot`（`LootState`），10×4，(0,0)＝左上。`CanPlace` → `Place`（回傳手上剩下的道具）、`Remove`、`AddAnywhere`、`Equip`／`Unequip`／`TryEquipFromBag`、`SpendParts`、`Changed`。
+  - 裝備欄可以空著；不變式 `Loadout.HasAttack((AttackId)slot) == (GetEquipped(slot) != null)` 由 data 維護，HUD、觸控按鈕、主角照舊讀 `Loadout`。
+  - 裝在身上的道具 `CanPlace` 回 false，要先 `Unequip`；道具自己佔的格子在 `CanPlace` 時當成空的（搬位置）。
+  - 「手上拿著的道具」是 ui 的狀態，不在 `LootState` 裡；關背包時依序放回原位 → `AddAnywhere` → `LootDrops.DropNearHero`。
+- **拾取預留**：`LootState.Reserve(item)` → `LootReservation`（`Commit`／`Cancel` 只第一次有效）。零件可以只預留一部分（回傳新的一堆，原 `item.Count` 扣掉）。pickup 在飛行抵達、`PausedChanged(true)`、物件被刪時一律 `Commit`，所以背包介面打開時沒有未完成的預留。
+- **強化**：`Enhance.Cost`／`SuccessPercent`／`DowngradeOnFail`／`FailureText`／`NextLevelEffect`／`TryEnhance`。道具必須在格子盤或裝備欄上（拿在手上回 `NotAllowed`）。
+- **掉落**：data 在敵人死亡時依掉落表產生道具（依 `SpawnPoint.Id` 防刷，整局記得），呼叫 `LootDrops.Spawn(parent, session, item, 位置, droppedByPlayer)`；玩家丟棄與劇情發放用 `LootDrops.DropNearHero(session, item, droppedByPlayer)`。地上的道具掛在 worldRoot，重生時消失。
+- **圖示**：`LootVisuals.Icon(item)`（程式產生，地上、飛行、背包共用），快取由 `SidescrollerGame.ResetStatics` 清。
+- **暫停**：背包與強化介面開啟時 `session.SetPaused(true)`，關閉延後一幀解除；`StoryUi.Update` 在暫停選單沒開時先呼叫 `LootScreens.Tick()`，暫停鍵只在 `!session.Paused` 時開暫停選單。演出中（`StoryUi.IsCutscenePlaying`）、輸入鎖、通關、直向提示時都不能開。
+- **新按鍵**（`SsInput`）：`BagPressed`（I、手把 Select）、`InteractPressed`（E、手把 East、觸控「強化」鈕）、`MenuLeftPressed`／`MenuRightPressed`。
+- **劇情 2**：演出 `grant` 新增 `gear` 欄位（見 `cutscene-format.md`），龜婆發「急件彈弓」「殼帶護片」並直接裝上；`GameFlow.EnsureMentorRewards` 保底同步。
+
+### 11.2 字型
+
+思源黑體-Medium 字集沒有「−」(U+2212)「✕」「·」「◀」「▶」：遊戲內文字的減號一律用半形「-」或全形「－」。新文字都要讓 `CutsceneChecker` 涵蓋（`StoryTexts.All` 或 `CutsceneChecker.AddLootTexts`）。
+
+### 11.3 只更新代碼包時的引擎 API 限制
+
+已發佈的主體（APK、WebGL Player）在 IL2CPP 裁剪時只保留 AOT 端用到的引擎成員。遊戲模組代碼新用到、但主體沒保留的方法，只更新代碼包時會在執行期找不到（例：`ColorUtility.ToHtmlStringRGB` 被裁掉，已改成自己轉十六進位）。只出代碼包前要：
+
+1. 用 HybridCLR 的 `MissingMetadataChecker`，拿新的 `Assembly-CSharp.dll` 對照出主體當時留下的 `Library/HybridCLR/AssembliesPostIl2CppStrip/<平台>`（`netstandard` 是轉發組件，排除不算缺）。
+2. 有缺少就改用主體已有的 API，或改成整包重出。
