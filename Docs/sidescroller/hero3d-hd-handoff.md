@@ -111,3 +111,23 @@ worktree 都在 `/Users/iulee/UnityProject/blender/` 底下，基於 main 8d8c3d
 
 - `session-dashboard` 的看板 `hero3d-hd`：`/Users/iulee/UnityProject/session-dashboard/scripts/start.sh hero3d-hd 8897`，用內建瀏覽器開 `http://127.0.0.1:8897/`。
 - 協調 session 的每 10 分鐘排程與變更請求的 Monitor 只活在那個 session 裡；換 session 接手要照 `session-dashboard/docs/coordinator.md` 重新掛上。
+
+## 8. 整合完成（2026-10-29 晚，Windows 電腦接手）
+
+接手 session 沒有重開四個工作 session，改在同一個 session 依序做完 §6 的步驟：
+
+- **審查**（取代原本的 subagent 審查）：四個分支各自在 Blender 5.2.3（Windows）跑過，用特寫圖檢查交接列的風險——Hurt 仰頭時頸巾沒有穿出下巴、Run 膝蓋彎曲不塌、手和郵差包的重疊看起來是手扶著包、表情的 9 個 shape key 都正常；`apply_overlap` 的旋轉合成（在骨頭自己的座標系後乘）與循環接縫（跑 3 圈、最後一格＝第一格）讀過程式確認沒問題。
+- **合併**：用 cherry-pick 依序疊上造型 → 表情 → 貼圖 → shader（線性歷史），`hero3d.py` 的衝突照 §5 處理：保留造型的 `EYE_C`／`EYE_R`／`CAP_BRIM_Z` 與密度表、保留表情的 `EYE_DIR` 與 `brow`／`mouth`／`tongue` 顏色、眼睛用表情版（沒有眼皮，眼皮在 Eyelids）但大小照造型的 `EYE_R`；貼圖與描邊法線兩個 region 並存。另外依 §5.5 把 Mouth 的描邊粗細設成 0。
+- **結果**：18,738 三角形、28 根骨頭、9 個 blend shape、UV 521 個島（拉伸 p50 1.02、p95 1.08）、貼圖 2 張 1024²；`hero3d.py` 全部跑完約 40 秒。換上新帽子後眉毛露出來，表情總覽正常。
+- **Unity**：新 FBX 改名 `SsHero3D.fbx`、兩張貼圖改名 `SsHero3D_BaseMap.png`／`SsHero3D_MaskMap.png` 放在模型旁，跑「設定模型與預覽場景」，再用 `Hero3DPlayCapture` 從 Entry 進 Play 拍 7 個動作——主角經 AssetPackage 載入、`HeroVisual` 與 `SsHero3D_Anim.controller` 不用改。
+
+### 已知問題（不擋整合）
+- 尾巴下側的殼紋投影有一塊不自然的深色紋路（只在背面看得到，遊戲視角看不到）。
+- 很斜的角度看時，遠側眼睛會從眉骨／長嘴後面露出一點眼白——卡通頭型的正常現象，不是破面。
+- shader 的陰影色、rim、高光預設值是用頂點色模型調的（§5.7），換上貼圖後目視正常，沒有重調。
+- 特急制服仍沒有 3D 版。
+
+### 還沒做、要使用者決定
+1. `Docs/sidescroller/design.md` 的主角設定（短褲改深藍、新增頸巾、帽子改款、比例）要不要同步改。
+2. 是否把 `hero3d-hd` 併進 main、push，以及要不要刪掉四個工作分支（`claude/happy-montalcini-986b44`、`claude/epic-easley-7a5be3`、`claude/sweet-goldberg-f4bbf6`、`claude/musing-edison-9fdf4c`）。
+3. WebGL／Android 要重新出資源包（`sidescroller_models` 群組多了貼圖、模型變大）才看得到新外觀。
