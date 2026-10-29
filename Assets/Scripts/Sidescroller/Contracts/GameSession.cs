@@ -16,12 +16,15 @@ namespace Sidescroller
             Lifetime = lifetime;
             Loadout = new Loadout();
             Flags = new StoryFlags();
+            Loot = new LootState(Loadout);
         }
 
         /// <summary>Shutdown 時取消；所有 await 都要帶它。</summary>
         public CancellationToken Lifetime { get; }
         public Loadout Loadout { get; }
         public StoryFlags Flags { get; }
+        /// <summary>背包、裝備欄、零件（data 實作；整局有效，死亡不扣）。</summary>
+        public LootState Loot { get; }
 
         #region 主角血量（player 改，story 讀）
         public int Hp { get; private set; }

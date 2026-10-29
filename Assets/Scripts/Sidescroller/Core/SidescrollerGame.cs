@@ -119,6 +119,7 @@ namespace Sidescroller
             SsArt.ResetCache();
             SsInput.Reset();
             ActorRegistry.Clear();
+            LootVisuals.ResetCache();
         }
 
         #region 內部

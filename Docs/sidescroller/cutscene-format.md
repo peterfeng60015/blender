@@ -138,16 +138,20 @@
 
 字卡畫在淡入淡出遮罩**之上**（全黑時也看得到）。
 
-### `grant`：發放能力或服裝（立即）
+### `grant`：發放裝備或服裝（立即）
 
 | 欄位 | 型別 | 必填 | 預設 | 說明 |
 |---|---|---|---|---|
-| `attack` | `"Melee"`／`"Sling"`／`"Roll"` | 二選一 | — | `session.Loadout.GrantAttack` |
-| `costume` | `"Day"`／`"Express"` | 二選一 | — | `session.Loadout.GrantCostume(id, equip)` |
+| `gear` | `"Melee"`／`"Ranged"`／`"Shell"` | 三選一 | — | 發該欄的初始裝備（近戰「破舊郵差包」、遠程「急件彈弓」、殼甲「殼帶護片」，白色無詞條）：`LootTables.GiveMentorGear` |
+| `attack` | `"Melee"`／`"Sling"`／`"Roll"` | 三選一 | — | 舊寫法，相容用：改發對應欄位的初始裝備（Sling＝Ranged、Roll＝Shell），效果同 `gear` |
+| `costume` | `"Day"`／`"Express"` | 三選一 | — | `session.Loadout.GrantCostume(id, equip)` |
 | `equip` | bool | 否 | true | 只對 `costume` 有效：發放後立刻換上 |
-| `banner` | bool | 否 | true | 顯示字卡「獲得：<名稱>」（`Loadout.DisplayName`），不阻塞 |
+| `banner` | bool | 否 | true | 顯示字卡「獲得：<名稱>」（裝備名稱或 `Loadout.DisplayName`），不阻塞 |
 
-`attack` 與 `costume` 同時有或都沒有：記錯誤、跳過。名稱大小寫要完全相同。
+`gear`、`attack`、`costume` 要剛好有一個，否則記錯誤、跳過。名稱大小寫要完全相同。
+
+攻擊能不能用由裝備欄決定（`loot-design.md` §1）：發裝備時該欄空著就直接裝上，已經有裝備就放進背包，背包也滿了就掉在主角腳邊。
+遠程、殼甲的初始裝備每局只發一次（旗標 `got_mentor_ranged`、`got_mentor_shell`），演出中途被打斷重播不會重複發；`GameFlow.EnsureMentorRewards` 的保底也看這兩個旗標。
 
 ### `setFlag`：設旗標（立即）
 
@@ -237,7 +241,7 @@ story 另外交一個 Editor 檢查工具（選單 `Tools/Sidescroller/檢查演
 | 檔案 | 觸發 | 重點 |
 |---|---|---|
 | `SsCutscene_Intro.json` | 起點 `trg_intro` | 字卡、旁白、鏡頭平移看電視（`style: screen`）、雜兵走進畫面（`move`），結束後雜兵直接開打 |
-| `SsCutscene_Mentor.json` | `trg_mentor` | `grant` 三連發、白色閃光換裝（`fade color white`） |
+| `SsCutscene_Mentor.json` | `trg_mentor` | `grant` 三連發（`gear Ranged`、`costume Express`、`gear Shell`）、白色閃光換裝（`fade color white`） |
 | `SsCutscene_BossIntro.json` | `trg_boss`（第一次） | `setFlag tmp_boss_gate_closed` 關門、`zoom` 到 Boss 房、`anim Stomp wait` |
 | `SsCutscene_BossDefeat.json` | Boss 被擊敗 | `move target/gap` 走到 Boss 旁、畫外音（`offscreen`）、淡到全黑接字卡、`keepFade: true` |
 

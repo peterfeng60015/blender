@@ -122,12 +122,45 @@ namespace Sidescroller
                 texts.Add("獲得字卡\u0001" + StoryTexts.GrantPrefix + Loadout.DisplayName(id));
             foreach (CostumeId id in new[] { CostumeId.Day, CostumeId.Express })
                 texts.Add("獲得字卡\u0001" + StoryTexts.GrantPrefix + Loadout.DisplayName(id));
+            AddLootTexts(texts);
             var charCount = CheckGlyphs(texts, problems);
             #endregion
 
             summary = $"演出腳本 {files.Length} 份（{commandCount} 個指令）、關卡資料 {levelFiles.Length} 份、文字 {texts.Count} 段（{charCount} 種字元）";
             return problems;
         }
+
+        #region 道具文字
+        /// <summary>道具名稱、種類、基礎數值、詞條與強化說明（data 產生的文字；介面文字由 StoryTexts 涵蓋）。</summary>
+        private static void AddLootTexts(List<string> texts)
+        {
+            texts.Add("拾取回饋\u0001" + LootHudView.TextFull);
+            texts.Add("拾取回饋\u0001" + string.Format(LootHudView.TextPartsFormat, 20, LootTables.PartName));
+            foreach (var name in LootTables.AllNames())
+            {
+                texts.Add("道具名稱\u0001" + name);
+                texts.Add("獲得字卡\u0001" + StoryTexts.GrantPrefix + name);
+            }
+            foreach (ItemKind kind in new[] { ItemKind.Part, ItemKind.Melee, ItemKind.Ranged, ItemKind.Shell })
+            {
+                var item = new ItemData(kind, LootTables.PartName, Rarity.Common, 20);
+                texts.Add("道具種類\u0001" + item.KindName);
+                texts.Add("道具名稱\u0001" + item.DisplayName + " +5");
+                foreach (var line in item.DescribeBase())
+                    texts.Add("基礎數值\u0001" + line + " +-%0123456789");
+                var next = Enhance.NextLevelEffect(item);
+                if (next != null)
+                    texts.Add("強化效果\u0001" + next + "傷害 +1 滾殼傷害 +1 攻擊速度 滾殼冷卻");
+            }
+            for (var i = 0; i <= (int)AffixId.PartFind; i++)
+            {
+                foreach (var value in new[] { 1f, 0.3f, 18f })
+                    texts.Add("詞條\u0001" + new Affix { Id = (AffixId)i, Value = value }.Describe());
+            }
+            for (var level = 0; level < Enhance.MaxLevel; level++)
+                texts.Add("強化失敗\u0001" + Enhance.FailureText(level));
+        }
+        #endregion
 
         #region 演出腳本內容
         private static void CheckScript(CutsceneScript script, List<string> texts, List<string> actorRefs, List<string> problems)

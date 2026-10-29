@@ -47,12 +47,19 @@ namespace Sidescroller
         #endregion
 
         internal HudView Hud { get; private set; }
+        /// <summary>背包圖示與拾取回饋（pickup）。</summary>
+        internal LootHudView LootHud { get; private set; }
+        /// <summary>背包與強化介面（ui）。</summary>
+        internal LootScreens LootScreens { get; private set; }
         internal DialogueView Dialogue { get; private set; }
         internal FadeView Fade { get; private set; }
         internal BannerView Banner { get; private set; }
         internal TouchControlsView Touch { get; private set; }
 
-        /// <summary>觸控按鈕要全部收起（手指都當點擊）：暫停中（含暫停選單、直向提示）、通關畫面。</summary>
+        /// <summary>遊戲鏡頭（補給站提示把世界座標換成畫面位置用）。</summary>
+        internal Camera WorldCamera => _rig != null ? _rig.Camera : null;
+
+        /// <summary>觸控按鈕要全部收起（手指都當點擊）：暫停中（含暫停選單、背包與強化介面、直向提示）、通關畫面。</summary>
         internal bool TouchBlocked => _cleared || _session.Paused || (_rotate != null && _rotate.Visible);
 
         public static StoryUi Create(GameSession session, CameraRig rig)
@@ -187,11 +194,13 @@ namespace Sidescroller
             var canvas = SsUiKit.CreateCanvas("StoryCanvas", CanvasOrder, transform);
             var root = canvas.transform;
             Hud = new HudView(root, _font, session);
+            LootHud = new LootHudView(root, _font, session);
             Touch = new TouchControlsView(root, _font, session, this);
             Dialogue = new DialogueView(root, _font);
             Fade = new FadeView(root);
             Banner = new BannerView(root, _font);
             BuildClearScreen(root);
+            LootScreens = new LootScreens(root, _font, session, this);
             BuildPauseMenu(root);
             _rotate = new RotateHintView(root, _font, StoryTexts.RotateSub);
             Fade.SetImmediate(1f, false);
@@ -214,6 +223,7 @@ namespace Sidescroller
                     SsTouch.Pad = null;
                 Touch.Dispose();
             }
+            LootScreens?.Dispose();
             if (!_subscribed || _session == null)
                 return;
             _subscribed = false;
@@ -257,6 +267,7 @@ namespace Sidescroller
             Banner.Tick(dt);
             Dialogue.Tick(udt);
             Hud.Tick();
+            LootHud.Tick();
             var portrait = UpdateRotateHint();
             Touch.Tick();
             if (portrait)
@@ -289,7 +300,9 @@ namespace Sidescroller
                     OnPauseChosen(_pauseActions[i]);
                 return;
             }
-            if (SsInput.PausePressed)
+            if (LootScreens.Tick())
+                return;
+            if (SsInput.PausePressed && !_session.Paused)
                 OpenPause();
         }
         #endregion

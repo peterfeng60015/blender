@@ -59,6 +59,8 @@ namespace Sidescroller
         private bool _frozen;
         private float _removeTimer = -1f;
         private float _fallDestroyY = -10f;
+        /// <summary>關卡資料的種類（rat／pigeon／rhino／boss），掉落表用。</summary>
+        private string _spawnKind;
 
         #region 建立
         /// <summary>在 ctx.Parent 底下建一個 T，登記到 ActorRegistry 並回傳根物件。失敗時不留半套物件。</summary>
@@ -82,6 +84,7 @@ namespace Sidescroller
         private void Init(SpawnPoint spawn, EnemyContext ctx)
         {
             Id = spawn.Id;
+            _spawnKind = spawn.Kind;
             Ctx = ctx;
             Session = ctx.Session;
             if (ctx.Level != null)
@@ -343,12 +346,14 @@ namespace Sidescroller
             {
                 Dead = true;
                 _knockbackLeft = 0f;
+                LootTables.OnEnemyDefeated(Ctx, Id, _spawnKind, Center);
                 OnDefeated();
             }
             else if (HitKnockbackSpeed > 0f && !_scripted)
             {
+                // hit.Knockback：主角近戰的「擊退強化」詞條給的倍率（0＝預設）
                 _knockbackLeft = HitKnockbackTime;
-                _knockbackVx = (hit.Direction >= 0 ? 1f : -1f) * HitKnockbackSpeed;
+                _knockbackVx = (hit.Direction >= 0 ? 1f : -1f) * HitKnockbackSpeed * (hit.Knockback > 0f ? hit.Knockback : 1f);
             }
             return true;
         }

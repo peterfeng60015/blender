@@ -5,7 +5,8 @@ namespace Sidescroller
     /// <summary>
     /// 急件彈弓的小包裹（design.md §7.3）：等速直線、存活 0.8 秒；每個物理步用 CircleCast 掃過這一步的路徑，
     /// 打到實心地形（TerrainTag.Solid）就消失，單向平台不擋；打到敵人呼叫 IDamageable（被盾擋也消失；特效由被打的一方播）。
-    /// 不放 collider，所以不會觸發關卡的觸發區。
+    /// 不放 collider，所以不會觸發關卡的觸發區。傷害、存活時間（射程）與穿透由主角依裝備給；
+    /// 穿透：命中敵人後繼續飛（同一隻只打一次），被盾擋下或打到實心地形照樣消失。
     /// </summary>
     public sealed class HeroProjectile : MonoBehaviour
     {
@@ -14,10 +15,14 @@ namespace Sidescroller
         private Vector2 _velocity;
         private float _life;
         private GameObject _owner;
+        private int _damage;
+        private bool _pierce;
+        private readonly System.Collections.Generic.List<IDamageable> _hitTargets = new System.Collections.Generic.List<IDamageable>();
         private readonly RaycastHit2D[] _hits = new RaycastHit2D[8];
         private ContactFilter2D _filter;
 
-        public static HeroProjectile Spawn(Transform parent, Vector2 position, Vector2 direction, GameObject owner)
+        public static HeroProjectile Spawn(Transform parent, Vector2 position, Vector2 direction, GameObject owner,
+            int damage = HeroStats.SlingDamage, float life = HeroStats.SlingLife, bool pierce = false)
         {
             var go = new GameObject("HeroProjectile");
             go.transform.SetParent(parent, false);
@@ -27,8 +32,10 @@ namespace Sidescroller
             go.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(direction.y, Mathf.Abs(direction.x)) * Mathf.Rad2Deg * facing);
             var p = go.AddComponent<HeroProjectile>();
             p._velocity = direction.normalized * HeroStats.SlingSpeed;
-            p._life = HeroStats.SlingLife;
+            p._life = life;
             p._owner = owner;
+            p._damage = damage;
+            p._pierce = pierce;
             p._filter = new ContactFilter2D { useTriggers = true };
             var anim = SpriteAnimator.Create(go, SsSorting.Projectile);
             anim.SetFacing(facing);
@@ -70,17 +77,18 @@ namespace Sidescroller
             if (tag == null || tag.Kind == ActorKind.Hero || tag.Kind == ActorKind.Npc)
                 return false;
             var target = col.GetComponentInParent<IDamageable>();
-            if (target == null)
+            if (target == null || _hitTargets.Contains(target))
                 return false;
-            target.TakeHit(new HitInfo
+            _hitTargets.Add(target);
+            var landed = target.TakeHit(new HitInfo
             {
-                Amount = HeroStats.SlingDamage,
+                Amount = _damage,
                 Source = DamageSource.Sling,
                 Direction = _velocity.x >= 0f ? 1 : -1,
                 BreaksShield = false,
                 Attacker = _owner
             });
-            return true;   // 命中／擋下的特效由被打的一方播
+            return !(_pierce && landed);   // 命中／擋下的特效由被打的一方播
         }
 
         private void SortByDistance(int n)

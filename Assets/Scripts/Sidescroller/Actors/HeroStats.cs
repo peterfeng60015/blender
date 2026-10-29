@@ -48,13 +48,16 @@ namespace Sidescroller
         #endregion
 
         #region 服裝（索引＝(int)CostumeId：Day、Express）
+        // 服裝的差異和裝備數值相加（loot-design.md §2）：日班甩包 2、滾殼冷卻 1.2 秒；特急甩包 1、冷卻 0.8 秒（裝備基礎值見 GearStats）
         private static readonly float[] RunSpeeds = { 6.0f, 7.0f };
-        private static readonly int[] MeleeDamages = { 2, 1 };
-        private static readonly float[] RollCooldowns = { 1.2f, 0.8f };
+        private static readonly int[] MeleeDamageBonuses = { 0, -1 };
+        private static readonly float[] RollCooldownDeltas = { 0f, -0.4f };
 
         public static float RunSpeed(CostumeId c) => RunSpeeds[(int)c];
-        public static int MeleeDamage(CostumeId c) => MeleeDamages[(int)c];
-        public static float RollCooldown(CostumeId c) => RollCooldowns[(int)c];
+        /// <summary>服裝對近戰傷害的加成（加在 <see cref="GearStats.MeleeBaseDamage"/> 上）。</summary>
+        public static int MeleeDamageBonus(CostumeId c) => MeleeDamageBonuses[(int)c];
+        /// <summary>服裝對滾殼冷卻的增減（秒，加在 <see cref="GearStats.ShellBaseRollCooldown"/> 上）。</summary>
+        public static float RollCooldownDelta(CostumeId c) => RollCooldownDeltas[(int)c];
         public static string SpritePrefix(CostumeId c) => c == CostumeId.Express ? "SsHeroExpress" : "SsHeroDay";
         #endregion
     }

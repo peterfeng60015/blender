@@ -434,10 +434,11 @@ namespace Sidescroller
         {
             var loadout = _session.Loadout;
             string name;
-            if (c.IsAttack)
+            if (c.IsGear || c.IsAttack)
             {
-                loadout.GrantAttack(c.Attack);
-                name = Loadout.DisplayName(c.Attack);
+                // 攻擊改由裝備欄決定：舊的 attack 寫法（資源包還沒更新時）也改發對應的初始裝備，維持「攻擊旗標＝裝備欄」
+                var slot = c.IsGear ? c.Gear : (EquipSlot)(int)c.Attack;
+                name = LootTables.GiveMentorGear(_session, slot);
             }
             else
             {

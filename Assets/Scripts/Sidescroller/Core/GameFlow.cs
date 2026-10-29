@@ -147,7 +147,7 @@ namespace Sidescroller
                 _info = LevelBuilder.Build(_worldRoot.transform, _levelText, _session, _rig);
                 SpawnActors();
 
-                _session.SetHp(HeroStats.MaxHp, HeroStats.MaxHp);
+                _session.SetHp(_hero.MaxHp, _hero.MaxHp);
                 _session.SetBoss(false, 0, 0, SsIds.BossDisplayName);
                 _session.SetHint(null);
                 _rig.ResetView();
@@ -212,6 +212,15 @@ namespace Sidescroller
                 {
                     Debug.LogError($"{Log} 建立角色 {spawn.Id}（{spawn.Kind}）失敗：{ex}");
                 }
+            }
+
+            try
+            {
+                SupplyStation.CreateAll(_worldRoot.transform, _info, _session, _story);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"{Log} 建立補給站失敗：{ex}");
             }
         }
 
@@ -344,16 +353,24 @@ namespace Sidescroller
             token.ThrowIfCancellationRequested();
         }
 
-        /// <summary>龜婆演出播完的保底：沒有彈弓、滾殼、特急制服就補發並換上特急制服（演出腳本壞掉時不卡關）。</summary>
+        /// <summary>
+        /// 龜婆演出播完的保底（演出腳本壞掉時不卡關）：還沒拿到「急件彈弓」「殼帶護片」、特急制服就補發。
+        /// 只看「這局有沒有發過」（mentor 獎勵旗標），不看裝備欄：玩家之後自己取下裝備不會被補。
+        /// </summary>
         private void EnsureMentorRewards()
         {
             var loadout = _session.Loadout;
-            if (loadout.HasAttack(AttackId.Sling) && loadout.HasAttack(AttackId.Roll) && loadout.HasCostume(CostumeId.Express))
+            var ranged = _session.Flags.Get(SsIds.FlagMentorRanged);
+            var shell = _session.Flags.Get(SsIds.FlagMentorShell);
+            if (ranged && shell && loadout.HasCostume(CostumeId.Express))
                 return;
-            Debug.LogWarning($"{Log} 龜婆演出播完但能力沒發齊，保底補發彈弓、滾殼、特急制服");
-            loadout.GrantAttack(AttackId.Sling);
-            loadout.GrantAttack(AttackId.Roll);
-            loadout.GrantCostume(CostumeId.Express, true);
+            Debug.LogWarning($"{Log} 龜婆演出播完但獎勵沒發齊，保底補發急件彈弓、殼帶護片、特急制服");
+            if (!ranged)
+                LootTables.GiveMentorGear(_session, EquipSlot.Ranged);
+            if (!shell)
+                LootTables.GiveMentorGear(_session, EquipSlot.Shell);
+            if (!loadout.HasCostume(CostumeId.Express))
+                loadout.GrantCostume(CostumeId.Express, true);
         }
 
         /// <summary>存檔點只往前（依關卡資料裡的順序），不會回到較早的存檔點。</summary>

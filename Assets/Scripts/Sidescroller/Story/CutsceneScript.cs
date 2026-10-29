@@ -119,6 +119,9 @@ namespace Sidescroller
     {
         public bool IsAttack;
         public AttackId Attack;
+        /// <summary>發裝備（"gear"：Melee／Ranged／Shell）：欄位空著就直接裝上。</summary>
+        public bool IsGear;
+        public EquipSlot Gear;
         public CostumeId Costume;
         public bool Equip = true;
         public bool Banner = true;
@@ -433,17 +436,19 @@ namespace Sidescroller
 
         private static CutsceneCommand ParseGrant(Fields f)
         {
-            f.CheckUnknown("op", "attack", "costume", "equip", "banner");
+            f.CheckUnknown("op", "attack", "costume", "gear", "equip", "banner");
             var hasAttack = f.Has("attack");
             var hasCostume = f.Has("costume");
-            if (hasAttack == hasCostume)
+            var hasGear = f.Has("gear");
+            if ((hasAttack ? 1 : 0) + (hasCostume ? 1 : 0) + (hasGear ? 1 : 0) != 1)
             {
-                f.Error("attack 與 costume 必須剛好二選一");
+                f.Error("attack、costume、gear 必須剛好三選一");
                 return null;
             }
             var cmd = new GrantCommand
             {
                 IsAttack = hasAttack,
+                IsGear = hasGear,
                 Equip = f.OptBool("equip", true),
                 Banner = f.OptBool("banner", true),
             };
@@ -456,6 +461,17 @@ namespace Sidescroller
                     case "Sling": cmd.Attack = AttackId.Sling; break;
                     case "Roll": cmd.Attack = AttackId.Roll; break;
                     default: f.Error($"attack \"{name}\" 只能是 Melee／Sling／Roll"); break;
+                }
+            }
+            else if (hasGear)
+            {
+                var name = f.ReqString("gear");
+                switch (name)
+                {
+                    case "Melee": cmd.Gear = EquipSlot.Melee; break;
+                    case "Ranged": cmd.Gear = EquipSlot.Ranged; break;
+                    case "Shell": cmd.Gear = EquipSlot.Shell; break;
+                    default: f.Error($"gear \"{name}\" 只能是 Melee／Ranged／Shell"); break;
                 }
             }
             else

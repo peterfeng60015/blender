@@ -17,9 +17,10 @@ namespace Sidescroller
         public static float SimMoveX;
 
         #region 模擬按鍵（設定時記下 frameCount）
-        private static readonly bool[] SimValue = new bool[9];
-        private static readonly int[] SimFrame = new int[9];
+        private static readonly bool[] SimValue = new bool[13];
+        private static readonly int[] SimFrame = new int[13];
         private const int KUp = 0, KDown = 1, KJump = 2, KMelee = 3, KShoot = 4, KRoll = 5, KSwitch = 6, KConfirm = 7, KPause = 8;
+        private const int KBag = 9, KInteract = 10, KLeft = 11, KRight = 12;
 
         public static bool SimUp { get => SimValue[KUp]; set => SetSim(KUp, value); }
         public static bool SimDown { get => SimValue[KDown]; set => SetSim(KDown, value); }
@@ -30,6 +31,10 @@ namespace Sidescroller
         public static bool SimSwitch { get => SimValue[KSwitch]; set => SetSim(KSwitch, value); }
         public static bool SimConfirm { get => SimValue[KConfirm]; set => SetSim(KConfirm, value); }
         public static bool SimPause { get => SimValue[KPause]; set => SetSim(KPause, value); }
+        public static bool SimBag { get => SimValue[KBag]; set => SetSim(KBag, value); }
+        public static bool SimInteract { get => SimValue[KInteract]; set => SetSim(KInteract, value); }
+        public static bool SimLeft { get => SimValue[KLeft]; set => SetSim(KLeft, value); }
+        public static bool SimRight { get => SimValue[KRight]; set => SetSim(KRight, value); }
 
         private static void SetSim(int key, bool value)
         {
@@ -127,6 +132,42 @@ namespace Sidescroller
         public static bool MenuUpPressed => Simulated ? SimPressed(KUp) : UpRaw(true);
         /// <summary>S、↓、手把下。</summary>
         public static bool MenuDownPressed => Simulated ? SimPressed(KDown) : DownRaw(true);
+
+        /// <summary>A、←、手把左（背包游標）。</summary>
+        public static bool MenuLeftPressed
+        {
+            get
+            {
+                if (Simulated)
+                    return SimPressed(KLeft);
+                var kb = Keyboard.current;
+                var pad = Gamepad.current;
+                return Pressed(kb?.aKey) || Pressed(kb?.leftArrowKey) || Pressed(pad?.dpad.left) || Pressed(pad?.leftStick.left);
+            }
+        }
+
+        /// <summary>D、→、手把右（背包游標）。</summary>
+        public static bool MenuRightPressed
+        {
+            get
+            {
+                if (Simulated)
+                    return SimPressed(KRight);
+                var kb = Keyboard.current;
+                var pad = Gamepad.current;
+                return Pressed(kb?.dKey) || Pressed(kb?.rightArrowKey) || Pressed(pad?.dpad.right) || Pressed(pad?.leftStick.right);
+            }
+        }
+
+        /// <summary>開／關背包：I、手把 Select（View）。觸控改點右上的背包圖示（<see cref="LootScreens"/> 判斷）。</summary>
+        public static bool BagPressed => Simulated
+            ? SimPressed(KBag)
+            : Pressed(Keyboard.current?.iKey) || Pressed(Gamepad.current?.selectButton);
+
+        /// <summary>互動：E、手把 East（補給站開強化；背包裡把裝備直接裝上）、觸控「強化」鈕。</summary>
+        public static bool InteractPressed => Simulated
+            ? SimPressed(KInteract)
+            : Pressed(Keyboard.current?.eKey) || Pressed(Gamepad.current?.buttonEast) || SsTouch.Pressed(SsTouch.BInteract);
         #endregion
 
         #region 內部

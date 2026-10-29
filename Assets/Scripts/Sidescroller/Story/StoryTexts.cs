@@ -77,8 +77,46 @@ namespace Sidescroller
         }
         #endregion
 
-        /// <summary>動態文字可能用到的字元（通關時間、血量等）。</summary>
-        public const string Digits = "0123456789:";
+        #region 背包與強化（loot-design.md §5、§6）
+        public const string BagTitle = "背包";
+        public const string BagParts = "零件　";
+        public const string SlotMelee = "近戰";
+        public const string SlotRanged = "遠程";
+        public const string SlotShell = "殼甲";
+        public const string BagHelp = "方向鍵：移動　J：拿起／放下　E：裝上　Esc：關閉";
+        public const string BagHelpTouch = "點道具拿起，再點格子放下　拖到裝備欄：裝上　拖到外面：丟掉";
+        public const string Close = "關閉";
+        public const string DropAskPrefix = "把「";
+        public const string DropAskSuffix = "」丟到地上？";
+        public const string DropYes = "丟掉";
+        public const string DropNo = "取消";
+        public const string TooltipLevel = "強化等級　+";
+        public const string TooltipEquipped = "身上裝備";
+        public const string TooltipHeld = "手上";
+
+        public const string EnhanceTitle = "補給站：強化";
+        public const string EnhanceEquipped = "裝備中";
+        public const string EnhanceLevel = "等級";
+        public const string EnhanceNext = "下一級效果";
+        public const string EnhanceCost = "需要零件";
+        public const string EnhanceOwnedPrefix = "（目前持有 ";
+        public const string EnhanceOwnedSuffix = "）";
+        public const string EnhanceRate = "成功率";
+        public const string EnhanceButton = "強化";
+        public const string EnhanceMax = "已達最高等級";
+        public const string EnhanceNoParts = "零件不足";
+        public const string EnhanceEmpty = "沒有可以強化的裝備";
+        public const string EnhanceSuccess = "強化成功！";
+        public const string EnhanceFail = "強化失敗：零件消耗，等級不變";
+        public const string EnhanceFailDown = "強化失敗：零件消耗，等級降為 +";
+        public const string EnhanceHelp = "↑↓：選擇裝備　J：強化　Esc：關閉";
+        public const string EnhanceHelpTouch = "點左邊選裝備，再按「強化」";
+        public const string StationPrompt = "E：強化";
+        public const string TouchEnhance = "強化";
+        #endregion
+
+        /// <summary>動態文字可能用到的字元（通關時間、血量、強化等級、零件數等）。</summary>
+        public const string Digits = "0123456789:+-－×%→▲▼—";
 
         /// <summary>全部固定文字（含觸控版關卡提示），給 Editor 檢查工具檢查缺字（KeyboardHints 是關卡資料原文，由關卡檢查涵蓋）。</summary>
         public static readonly string[] All = Concat(new[]
@@ -89,6 +127,11 @@ namespace Sidescroller
             ClearTitle, ClearTimePrefix, ClearRestart, ClearQuit,
             GrantPrefix, SwitchCostume, SwitchCostumeTouch, BossLabel, Digits,
             TouchJump, TouchMelee, TouchShoot, TouchRoll, TouchSwitch, TouchPause, RotateHint, RotateSub,
+            BagTitle, BagParts, SlotMelee, SlotRanged, SlotShell, BagHelp, BagHelpTouch, Close,
+            DropAskPrefix, DropAskSuffix, DropYes, DropNo, TooltipLevel, TooltipEquipped, TooltipHeld,
+            EnhanceTitle, EnhanceEquipped, EnhanceLevel, EnhanceNext, EnhanceCost, EnhanceOwnedPrefix, EnhanceOwnedSuffix,
+            EnhanceRate, EnhanceButton, EnhanceMax, EnhanceNoParts, EnhanceEmpty, EnhanceSuccess, EnhanceFail, EnhanceFailDown,
+            EnhanceHelp, EnhanceHelpTouch, StationPrompt, TouchEnhance,
         }, TouchHints);
 
         private static string[] Concat(string[] a, string[] b)

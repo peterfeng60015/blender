@@ -55,6 +55,8 @@ namespace Sidescroller
         public Transform Root => transform;
         public int Facing => _anim != null ? _anim.Facing : 1;
         public int Hp { get; private set; }
+        /// <summary>目前的最大血量（基本 5＋殼甲的「最大血量 +1」）。</summary>
+        public int MaxHp => _gear.MaxHp;
         public bool IsGrounded => _grounded;
         public bool IsDead => _state == State.Dead;
         /// <summary>主角的實體碰撞體（站立是膠囊，滾殼時同一個碰撞體縮成圓）。</summary>
@@ -102,9 +104,11 @@ namespace Sidescroller
             hero._solidFilter = new ContactFilter2D { useTriggers = false };
             hero._lastSafe = feet;
             hero._costume = session.Loadout.Costume;
-            hero.Hp = HeroStats.MaxHp;
-            session.SetHp(HeroStats.MaxHp, HeroStats.MaxHp);
+            hero._gear.Compute(session.Loot, hero._costume);
+            hero.Hp = hero._gear.MaxHp;
+            session.SetHp(hero.Hp, hero._gear.MaxHp);
             session.Loadout.Changed += hero.OnLoadoutChanged;
+            session.Loot.Changed += hero.OnLootChanged;
             hero.PlayAnim("Idle", true);
 
             ActorRegistry.Register(hero);
@@ -114,7 +118,10 @@ namespace Sidescroller
         private void OnDestroy()
         {
             if (_session != null)
+            {
                 _session.Loadout.Changed -= OnLoadoutChanged;
+                _session.Loot.Changed -= OnLootChanged;
+            }
             ActorRegistry.Unregister(this);
             if (_material != null)
                 Destroy(_material);
@@ -210,7 +217,7 @@ namespace Sidescroller
         #region 移動與跳躍
         private float ControlVelocityX(float vx, float dt)
         {
-            var target = _moveX * HeroStats.RunSpeed(_costume);
+            var target = _moveX * RunSpeed;
             var accel = _grounded ? HeroStats.GroundAccel : HeroStats.AirAccel;
             if (_moveX != 0f && _state != State.Melee)
                 _anim.SetFacing(_moveX > 0f ? 1 : -1);
@@ -379,13 +386,13 @@ namespace Sidescroller
                 return false;
 
             Hp = Mathf.Max(0, Hp - hit.Amount);
-            _session.SetHp(Hp, HeroStats.MaxHp);
+            _session.SetHp(Hp, _gear.MaxHp);
             if (Hp == 0)
             {
                 Die();
                 return true;
             }
-            _invincibleUntil = Time.time + HeroStats.HurtInvincible;
+            _invincibleUntil = Time.time + _gear.HurtInvincible;
             if (_state == State.Roll && IsBall && !CanStand())
                 return true;   // 在低矮通道裡：維持滾殼，不擊退
             EndRollShape();
@@ -410,7 +417,7 @@ namespace Sidescroller
             if (!PermanentInvincible)
             {
                 Hp = Mathf.Max(0, Hp - 1);
-                _session.SetHp(Hp, HeroStats.MaxHp);
+                _session.SetHp(Hp, _gear.MaxHp);
                 if (Hp == 0)
                 {
                     Die();
@@ -422,7 +429,7 @@ namespace Sidescroller
             _rb.position = _lastSafe;
             transform.position = _lastSafe;
             _rb.linearVelocity = Vector2.zero;
-            _invincibleUntil = Time.time + HeroStats.HurtInvincible;
+            _invincibleUntil = Time.time + _gear.HurtInvincible;
         }
 
         private void Die()

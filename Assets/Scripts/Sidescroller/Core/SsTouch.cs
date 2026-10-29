@@ -14,7 +14,7 @@ namespace Sidescroller
     {
         /// <summary>手指的綁定目標；≥0＝按鈕序號。</summary>
         public const int None = -1, Tap = -2, Stick = -3;
-        public const int BJump = 0, BMelee = 1, BShoot = 2, BRoll = 3, BSwitch = 4, BPause = 5, ButtonCount = 6;
+        public const int BJump = 0, BMelee = 1, BShoot = 2, BRoll = 3, BSwitch = 4, BPause = 5, BInteract = 6, ButtonCount = 7;
 
         private const int MaxSlots = 10;
         /// <summary>觸控後這段時間（秒，不受 timeScale 影響）內忽略滑鼠點擊：瀏覽器與 Device Simulator 會把觸控再模擬成滑鼠。</summary>
@@ -51,6 +51,11 @@ namespace Sidescroller
         private static float _moveX;
         private static bool _up;
         private static bool _down;
+        /// <summary>點擊那根手指（背包拖曳用）：按著時的位置，放開的那一幀記下放開。</summary>
+        private static int _pointerSlot = -1;
+        private static Vector2 _pointerPos;
+        private static bool _pointerReleased;
+        private static bool _pointerBegan;
 
         /// <summary>目前場景的觸控按鈕版面（<see cref="StoryUi"/> 建立時登記）；null＝沒有按鈕，所有觸控都算點擊。</summary>
         internal static TouchControlsView Pad;
@@ -97,6 +102,9 @@ namespace Sidescroller
             _moveX = 0f;
             _up = false;
             _down = false;
+            _pointerSlot = -1;
+            _pointerReleased = false;
+            _pointerBegan = false;
             Pad = null;
         }
 
@@ -164,6 +172,21 @@ namespace Sidescroller
             return _tapped;
         }
 
+        /// <summary>
+        /// 點擊那根手指（沒有其他點擊手指按著時，第一根按在按鈕與搖桿以外的手指）的狀態，背包拖曳用：
+        /// began＝這一幀按下，held＝還按著，released＝這一幀放開；pos＝目前（或放開前最後）的位置。
+        /// 同一幀按下又放開時 began 與 released 同時成立。拖曳中另一根手指點一下不算（began 不成立）。
+        /// 少見情況：同一個 slot 在同一幀舊手指結束、新手指開始時，began、held、released 會同時成立（新的一下當成點擊，不能拖曳）。
+        /// </summary>
+        public static void PointerState(out bool began, out bool held, out bool released, out Vector2 pos)
+        {
+            Evaluate();
+            began = _pointerBegan;
+            held = _pointerSlot >= 0;
+            released = _pointerReleased;
+            pos = _pointerPos;
+        }
+
         /// <summary>剛觸控過：這段期間的滑鼠點擊視為觸控模擬出來的，不處理。</summary>
         public static bool MouseSuppressed
         {
@@ -199,6 +222,8 @@ namespace Sidescroller
                 ButtonDown[i] = false;
             }
             _tapped = false;
+            _pointerReleased = false;
+            _pointerBegan = false;
 
             var ts = Touchscreen.current;
             DetectDevice();
@@ -263,6 +288,8 @@ namespace Sidescroller
                 return;
             }
             var target = SlotTarget[slot];
+            if (slot == _pointerSlot)
+                _pointerPos = pos;
             if (target >= 0)
                 ButtonHeld[target] = true;
             else if (target == Stick)
@@ -293,6 +320,12 @@ namespace Sidescroller
             {
                 _tapped = true;
                 _tapPos = pos;
+                if (_pointerSlot < 0)
+                {
+                    _pointerSlot = slot;
+                    _pointerPos = pos;
+                    _pointerBegan = true;
+                }
             }
             return target;
         }
@@ -301,6 +334,11 @@ namespace Sidescroller
         {
             if (_stickSlot == slot)
                 _stickSlot = -1;
+            if (_pointerSlot == slot)
+            {
+                _pointerSlot = -1;
+                _pointerReleased = true;
+            }
             SlotId[slot] = int.MinValue;
             SlotTarget[slot] = None;
         }

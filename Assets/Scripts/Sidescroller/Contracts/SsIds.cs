@@ -18,6 +18,9 @@ namespace Sidescroller
         /// <summary>閘門關閉（tmp_：重生時清掉）。</summary>
         public const string FlagGateClosed = "tmp_boss_gate_closed";
         public const string FlagMentorDone = "mentor_done";
+        /// <summary>龜婆的「急件彈弓」「殼帶護片」這局已經發過（演出或保底）；之後玩家自己取下不會再補發。</summary>
+        public const string FlagMentorRanged = "got_mentor_ranged";
+        public const string FlagMentorShell = "got_mentor_shell";
         public const string FlagStageClear = "stage_clear";
         public static string SeenFlag(string cutsceneLocation) => "seen_" + cutsceneLocation;
 

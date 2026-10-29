@@ -6,7 +6,7 @@ namespace Sidescroller
 {
     /// <summary>
     /// 觸控操作層的畫面與版面（由 <see cref="StoryUi"/> 建立、每幀 <see cref="Tick"/>）：左側浮動虛擬搖桿，
-    /// 右下跳躍／甩包／彈弓／滾殼四顆按鈕，右上換裝、暫停兩顆小鈕。整個版面放在 <see cref="Screen.safeArea"/> 內。
+    /// 右下跳躍／甩包／彈弓／滾殼四顆按鈕（在補給站旁時甩包左邊多一顆「強化」），右上換裝、暫停兩顆小鈕。整個版面放在 <see cref="Screen.safeArea"/> 內。
     /// 手指按到哪裡由 <see cref="Classify"/> 判斷（<see cref="SsTouch"/> 呼叫），本身不寫任何輸入狀態。
     /// 顯示規則：不是觸控模式時全部不顯示；暫停、通關、直向提示時全部不顯示（手指都當點擊）；演出中只留暫停鈕；其餘全部顯示。
     /// 按鈕至少約 9mm（<see cref="Screen.dpi"/> 可信時換算，否則照設計尺寸）。
@@ -100,6 +100,7 @@ namespace Sidescroller
             AddButton(SsTouch.BMelee, _gameplay, bottomRight, font, StoryTexts.TouchMelee, 44f);
             AddButton(SsTouch.BShoot, _gameplay, bottomRight, font, StoryTexts.TouchShoot, 44f);
             AddButton(SsTouch.BRoll, _gameplay, bottomRight, font, StoryTexts.TouchRoll, 44f);
+            AddButton(SsTouch.BInteract, _gameplay, bottomRight, font, StoryTexts.TouchEnhance, 44f);
             AddButton(SsTouch.BSwitch, _gameplay, topRight, font, StoryTexts.TouchSwitch, 36f);
             AddButton(SsTouch.BPause, _root, topRight, font, StoryTexts.TouchPause, 48f);
             #endregion
@@ -132,6 +133,7 @@ namespace Sidescroller
             SetActive(_buttons[SsTouch.BShoot], loadout.HasAttack(AttackId.Sling));
             SetActive(_buttons[SsTouch.BRoll], loadout.HasAttack(AttackId.Roll));
             SetActive(_buttons[SsTouch.BSwitch], loadout.CostumeCount > 1);
+            SetActive(_buttons[SsTouch.BInteract], _ui != null && _ui.LootScreens != null && _ui.LootScreens.StationInRange);
 
             var mode = CurrentMode(SsInput.TouchActive);
             SetActive(_root, mode >= ModePauseOnly);
@@ -247,7 +249,14 @@ namespace Sidescroller
             Place(SsTouch.BMelee, jumpCenter + Polar(arc, 180f), action);
             Place(SsTouch.BShoot, jumpCenter + Polar(arc, 135f), action);
             Place(SsTouch.BRoll, jumpCenter + Polar(arc, 90f), action);
+            // 補給站的「強化」：甩包再往左一格；會伸進左側搖桿區（安全區域寬的 45%）時改放到滾殼上方
+            var interact = jumpCenter + Polar(arc * 2f, 180f);
+            var stickRight = -safe.width / _unitsToPx * (1f - StickZoneWidth);
+            if (interact.x - action / 2f * HitScale < stickRight)
+                interact = jumpCenter + Polar(arc * 2f, 90f);
+            Place(SsTouch.BInteract, interact, action);
             // 右上：暫停在角落，換裝在它左邊（上方中央是提示文字，左上是血量）
+            // 背包圖示（LootHudView.Relayout）照抄暫停鈕的大小與邊距放在它正下方：改這裡的版面要一起改那邊
             Place(SsTouch.BPause, new Vector2(-(smallEdge + small / 2f), -(smallEdge + small / 2f)), small);
             Place(SsTouch.BSwitch, new Vector2(-(smallEdge + small * 1.5f + Gap), -(smallEdge + small / 2f)), small);
         }

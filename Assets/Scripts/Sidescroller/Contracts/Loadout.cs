@@ -5,7 +5,7 @@ namespace Sidescroller
 {
     /// <summary>
     /// 已取得的攻擊與服裝。內部用 int 位元旗標存（避開值型別集合的 AOT 泛型）。
-    /// 誰改：story（演出的 grant）、player（換裝、保底發放、Reset）。重生不 Reset。
+    /// 誰改：服裝由 story（演出的 grant）與 player（換裝、保底發放）改；攻擊旗標由 <see cref="LootState"/> 依裝備欄同步。重生不 Reset。
     /// </summary>
     public sealed class Loadout
     {
@@ -40,11 +40,27 @@ namespace Sidescroller
         public bool HasAttack(AttackId id) => (_attacks & Bit((int)id)) != 0;
         public bool HasCostume(CostumeId id) => (_costumes & Bit((int)id)) != 0;
 
+        /// <summary>
+        /// 舊的直接發攻擊（不經裝備欄）。攻擊旗標現在由 <see cref="LootState"/> 依裝備欄維護，
+        /// 呼叫這個會打破「旗標＝裝備欄」的不變式；遊戲裡已不使用，保留給相容。
+        /// </summary>
         public void GrantAttack(AttackId id)
         {
             if (HasAttack(id))
                 return;
             _attacks |= Bit((int)id);
+            Changed?.Invoke();
+        }
+
+        /// <summary>LootState 維持「攻擊旗標＝裝備欄有沒有東西」用（取下裝備時會清掉旗標）。狀態沒變不觸發 Changed。</summary>
+        internal void SetAttackFromGear(AttackId id, bool owned)
+        {
+            if (HasAttack(id) == owned)
+                return;
+            if (owned)
+                _attacks |= Bit((int)id);
+            else
+                _attacks &= ~Bit((int)id);
             Changed?.Invoke();
         }
 
@@ -80,7 +96,7 @@ namespace Sidescroller
             return true;
         }
 
-        /// <summary>回到開場：只有 Melee＋Day，觸發 Changed。</summary>
+        /// <summary>回到開場：只有 Melee＋Day，觸發 Changed（目前沒人呼叫；LootState 不會跟著重置，要用的話先整理裝備欄）。</summary>
         public void Reset()
         {
             _attacks = Bit((int)AttackId.Melee);
