@@ -1327,10 +1327,11 @@ def skin_character(arm, parts):
     for name, rule in rules.items():
         rigid_bind(by_name[name], arm, rule)
 
-    # 描邊粗細用頂點群組控制：身體、殼、帽子 1.0，小配件 0.6（合併後還能分粗細）
+    # 描邊粗細用頂點群組控制：身體、殼、帽子 1.0，小配件 0.6，嘴是貼片不描邊 0（合併後還能分粗細，Unity 讀頂點色 A）
+    widths = {"Body": 1.0, "Shell": 1.0, "Cap": 1.0, "Mouth": 0.0}
     for o in parts:
         g = o.vertex_groups.new(name="OutlineWidth")
-        g.add(list(range(len(o.data.vertices))), 1.0 if o.name in ("Body", "Shell", "Cap") else 0.6, "REPLACE")
+        g.add(list(range(len(o.data.vertices))), widths.get(o.name, 0.6), "REPLACE")
 
     select_only(parts, body)
     bpy.ops.object.join()
@@ -1626,15 +1627,23 @@ def render_action_sheet(scene, cam, arm, actions, path, cols=6, cell=320):
 
 
 def bake_vertex_colors(mesh):
-    """Unity 用：每個面的材質色寫進頂點色 Col（sRGB），材質合成一個 M_AhJia。
-    Unity 端的 AhJiaToon shader 讀頂點色做 3 階明暗與描邊，整隻角色一次 draw call。會改動網格，存完 .blend 才呼叫。"""
+    """Unity 用：每個面的材質色寫進頂點色 Col 的 RGB（sRGB，貼圖缺時的後備），A 寫描邊粗細（OutlineWidth 群組），
+    材質合成一個 M_AhJia。Unity 端的 AhJiaToon shader 讀 _BaseMap／_MaskMap 與頂點色，整隻角色一次 draw call。
+    會改動網格，存完 .blend 才呼叫。"""
     me = mesh.data
     colors = [m.diffuse_color[:] for m in me.materials]  # srgb() 轉過的線性值
+    width = [1.0] * len(me.vertices)
+    group = mesh.vertex_groups.get("OutlineWidth")
+    if group:
+        for v in me.vertices:
+            for ge in v.groups:
+                if ge.group == group.index:
+                    width[v.index] = ge.weight
     attr = me.color_attributes.new("Col", "BYTE_COLOR", "CORNER")
     for poly in me.polygons:
         c = colors[poly.material_index]
         for li in poly.loop_indices:
-            attr.data[li].color = c
+            attr.data[li].color = (c[0], c[1], c[2], width[me.loops[li].vertex_index])
     me.color_attributes.active_color = attr
     me.materials.clear()
     me.materials.append(bpy.data.materials.new("M_AhJia"))
@@ -1656,6 +1665,647 @@ def export_fbx(path):
         bake_anim_use_nla_strips=False, bake_anim_force_startend_keying=True,
         apply_scale_options="FBX_SCALE_ALL", axis_forward="-Z", axis_up="Y",
     )
+
+#endregion
+
+
+#region UV 與貼圖
+
+# UV0（UVMap）atlas＋兩張 1024² 貼圖。做法：Cycles 把每個 texel 的位置、法線、材質編號、凸度、AO 烘到浮點圖，
+# 再用 numpy 依「材質種類＋3D 位置」畫圖案。圖案定在 3D 空間裡，UV 接縫不會斷紋；
+# 各零件的位置從該材質的面算 bbox，不寫死頂點數，造型改網格後照樣能跑。
+TEX_SIZE = 1024
+UV_FACE_BOOST = 1.4           # 頭臉的 UV 島放大倍數（臉、嘴的 texel density 稍高）
+TEX_DILATE = 12               # UV 島外擴的像素數（mipmap 不吃到背景色）
+UV_ANGLE = 66                 # Smart UV Project 分島角度（之後每島再用 ABF 重展，角度大一點島比較少）
+UV_MARGIN = 0.004             # 打包間距（atlas 寬的比例）
+# 圖樣對照表：COLORS 鍵 → 圖樣。沒列到的鍵畫「固有色＋通用筆觸」，_MaskMap 用 STYLE_MASK 的預設列。
+# 造型改配色、新增零件時只要在這裡補一行（例如新的布料零件指到 "fabric"）。
+PAINT_STYLE = {
+    "skin": "skin", "belly": "belly", "ear_inner": "gradient", "nose": "nose",
+    "shell": "scutes_small", "band": "scutes", "cap": "cap", "cap_logo": "logo",
+    "bag": "box_fabric", "bag_flap": "box_fabric", "strap": "fabric", "scarf": "fabric", "lace": "fabric",
+    "shorts": "shorts", "shoe": "shoe", "sole": "sole", "buckle": "metal",
+    "eye_white": "eye_white", "pupil": "pupil",
+}
+# 圖樣要參照的其他材質（找位置或借顏色）：角色 → COLORS 鍵；鍵不存在時該細節略過或改用推算的顏色
+PAINT_REF = {"nose": "nose", "eye": "eye_white", "cap": "cap", "pink": "ear_inner", "thread": "cap_logo",
+             "ink": "band", "sole": "sole"}
+# 圖樣 → (_MaskMap R 高光遮罩, B 材質類別：0 皮膚、0.33 殼、0.66 布、1 金屬／眼睛)
+STYLE_MASK = {
+    "skin": (0.0, 0.0), "belly": (0.0, 0.0), "gradient": (0.0, 0.0), "nose": (0.9, 0.0),
+    "scutes": (0.0, 0.33), "scutes_small": (0.0, 0.33), "cap": (0.7, 0.66), "logo": (0.5, 0.66),
+    "box_fabric": (0.0, 0.66), "fabric": (0.0, 0.66), "shorts": (0.0, 0.66), "shoe": (0.0, 0.66),
+    "sole": (0.0, 0.66), "metal": (1.0, 1.0), "eye_white": (0.6, 1.0), "pupil": (1.0, 1.0),
+    None: (0.0, 0.66),
+}
+
+
+def _hash(ix, iy, iz, seed=0):
+    """整數格點 → 0～1 的亂數（numpy 向量化）。"""
+    h = (ix * 73856093 ^ iy * 19349663 ^ iz * 83492791 ^ seed * 2654435761) & 0xFFFFFFFF
+    h = ((h ^ (h >> 16)) * 0x45D9F3B) & 0xFFFFFFFF
+    h = ((h ^ (h >> 16)) * 0x45D9F3B) & 0xFFFFFFFF
+    return ((h ^ (h >> 16)) & 0xFFFF) / 65535.0
+
+
+def _noise(p, scale, seed=0):
+    """3D value noise；scale 可以是三軸不同（拉長成筆刷方向）。"""
+    import numpy as np
+    q = p * np.asarray(scale, dtype=np.float64)
+    i = np.floor(q).astype(np.int64)
+    f = q - i
+    u = f * f * (3 - 2 * f)
+    out = np.zeros(len(p))
+    for dx in (0, 1):
+        for dy in (0, 1):
+            for dz in (0, 1):
+                w = ((u[:, 0] if dx else 1 - u[:, 0]) * (u[:, 1] if dy else 1 - u[:, 1])
+                     * (u[:, 2] if dz else 1 - u[:, 2]))
+                out += w * _hash(i[:, 0] + dx, i[:, 1] + dy, i[:, 2] + dz, seed)
+    return out
+
+
+def _fbm(p, scale, octaves=2, seed=0):
+    import numpy as np
+    total, amp, norm = 0.0, 1.0, 0.0
+    for o in range(octaves):
+        total = total + amp * _noise(p, np.asarray(scale, dtype=np.float64) * 2 ** o, seed + o)
+        norm += amp
+        amp *= 0.5
+    return total / norm
+
+
+def _step(e0, e1, x):
+    import numpy as np
+    t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def _quant(x, levels):
+    """0～1 量化成 levels 階（硬色階的筆觸）。"""
+    import numpy as np
+    return np.floor(np.clip(x, 0.0, 0.999) * levels) / (levels - 1)
+
+
+def _rgb(key):
+    import numpy as np
+    h = COLORS[key].lstrip("#")
+    return np.array([int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)])
+
+
+def _lerp(a, b, t):
+    import numpy as np
+    t = np.asarray(t, dtype=np.float64)
+    return a + (b - a) * (t[:, None] if t.ndim == 1 else t)
+
+
+def _dashes(s, period):
+    """沿 s（公尺）每 period 一段的虛線（縫線）。"""
+    import numpy as np
+    return np.mod(s / period, 1.0) < 0.55
+
+
+def _slot_keys(me):
+    rev = {m.name: k for k, m in MATS.items()}
+    return [rev.get(m.name, m.name) if m else "" for m in me.materials]
+
+
+def _frames(me, keys):
+    """每種材質（以及左右各一份）的面 bbox 與最薄的主軸 n（圓片狀零件的法線方向，正負未定）：
+    畫腮紅、瞳孔亮點、縫線、帽標時找位置用。"""
+    import numpy as np
+    n = len(me.polygons)
+    cen, area, mi = np.empty(n * 3), np.empty(n), np.empty(n, dtype=np.int32)
+    me.polygons.foreach_get("center", cen)
+    me.polygons.foreach_get("area", area)
+    me.polygons.foreach_get("material_index", mi)
+    cen = cen.reshape(-1, 3)
+
+    def frame(s):
+        lo, hi = cen[s].min(0), cen[s].max(0)
+        w = area[s] / max(1e-12, area[s].sum())
+        d = cen[s] - (cen[s] * w[:, None]).sum(0)
+        n = np.linalg.eigh((d * w[:, None]).T @ d)[1][:, 0]     # 面中心分佈最薄的方向
+        return dict(lo=lo, hi=hi, c=(lo + hi) / 2, half=(hi - lo) / 2, n=n)
+
+    out = {}
+    for i, key in enumerate(keys):
+        s = mi == i
+        if s.any():
+            out[key] = frame(s)
+        for sx in (1, -1):
+            ss = s & (cen[:, 0] * sx > 0)
+            if ss.any():
+                out[(key, sx)] = frame(ss)
+    return out
+
+
+def _openness(bm):
+    """每個面往外（法線半球 5 個方向）射線、0.12 m 內沒打到東西的比例：藏在殼裡、眼白裡的面接近 0。"""
+    from mathutils.bvhtree import BVHTree
+    tree = BVHTree.FromBMesh(bm)
+    out = {}
+    for f in bm.faces:
+        n = f.normal
+        t = n.orthogonal().normalized()
+        b = n.cross(t)
+        o = f.calc_center_median() + n * 1e-4
+        dirs = [n] + [(n + t * a + b * c).normalized() for a, c in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+        out[f] = sum(tree.ray_cast(o, d, 0.12)[0] is None for d in dirs) / len(dirs)
+    return out
+
+
+def _uv_stretch(me):
+    """每個三角形 3D→UV 映射的兩個奇異值比（1＝無拉伸）；回傳面積加權的 p50／p95。"""
+    import numpy as np
+    me.calc_loop_triangles()
+    n = len(me.loop_triangles)
+    li, vi = np.empty(n * 3, dtype=np.int64), np.empty(n * 3, dtype=np.int64)
+    me.loop_triangles.foreach_get("loops", li)
+    me.loop_triangles.foreach_get("vertices", vi)
+    co = np.empty(len(me.vertices) * 3)
+    me.vertices.foreach_get("co", co)
+    uv = np.empty(len(me.loops) * 2)
+    me.uv_layers["UVMap"].data.foreach_get("uv", uv)
+    p, t = co.reshape(-1, 3)[vi].reshape(n, 3, 3), uv.reshape(-1, 2)[li].reshape(n, 3, 2)
+    e1, e2 = p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]
+    x = e1 / np.maximum(1e-12, np.linalg.norm(e1, axis=1))[:, None]
+    y = np.cross(np.cross(e1, e2), e1)
+    y /= np.maximum(1e-12, np.linalg.norm(y, axis=1))[:, None]
+    a = np.stack([np.stack([(e1 * x).sum(1), (e2 * x).sum(1)], 1), np.stack([(e1 * y).sum(1), (e2 * y).sum(1)], 1)], 1)
+    b = np.stack([t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]], 2)
+    ok = np.abs(np.linalg.det(a)) > 1e-12
+    s = np.linalg.svd(b[ok] @ np.linalg.inv(a[ok]), compute_uv=False)
+    ratio = s[:, 0] / np.maximum(1e-12, s[:, 1])
+    w = np.abs(np.linalg.det(a[ok]))
+    order = np.argsort(ratio)
+    cw = np.cumsum(w[order]) / w.sum()
+    return ratio[order][np.searchsorted(cw, 0.5)], ratio[order][np.searchsorted(cw, 0.95)]
+
+
+def unwrap_atlas(mesh):
+    """Smart UV Project 分島 → 依島重新 ABF 展開（降低拉伸）→ 島統一密度 → 頭臉的島放大、
+    藏起來的島（殼內、眼白內）縮小 → 打包進一張 UV0（UVMap）。"""
+    from bpy_extras.bmesh_utils import bmesh_linked_uv_islands
+    me = mesh.data
+    uv = me.uv_layers.get("UVMap") or me.uv_layers.new(name="UVMap")
+    if me.uv_layers[0] != uv:
+        print("警告：UVMap 不是第一個 UV 層，Unity 的 UV0 會讀到別層")
+    me.uv_layers.active = uv
+    uv.active_render = True
+    keys = _slot_keys(me)
+    head = next((b[1] for b in BONES if b[0] == "Head"), None)    # 頭骨根部往下一點以上算頭臉（沒有 Head 骨就不放大）
+    head_z = head[2] - 0.06 if head else math.inf
+
+    bpy.context.scene.tool_settings.use_uv_select_sync = True
+    select_only([mesh], mesh)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(UV_ANGLE), island_margin=0.0, area_weight=0.0,
+                             correct_aspect=True, scale_to_bounds=False)
+    bpy.ops.uv.seams_from_islands(mark_seams=True)
+    bpy.ops.uv.unwrap(method="ANGLE_BASED", fill_holes=True, correct_aspect=True, margin=0.0)
+    bpy.ops.uv.average_islands_scale()
+    bm = bmesh.from_edit_mesh(me)
+    layer = bm.loops.layers.uv.active
+    vis = _openness(bm)
+    islands = bmesh_linked_uv_islands(bm, layer)
+    for island in islands:
+        areas = [(f.calc_area(), f.calc_center_median().z > head_z
+                  and PAINT_STYLE.get(keys[f.material_index]) not in ("cap", "logo"), vis[f]) for f in island]
+        total = max(1e-12, sum(a for a, _, _ in areas))
+        head = sum(a for a, h, _ in areas if h) / total
+        seen = sum(a * o for a, _, o in areas) / total
+        k = (UV_FACE_BOOST if head > 0.5 else 1.0) * (0.3 + 0.7 * min(1.0, seen / 0.3))
+        if abs(k - 1.0) < 1e-3:
+            continue
+        loops = [l for f in island for l in f.loops]
+        c = sum((l[layer].uv for l in loops), Vector((0, 0))) / len(loops)
+        for l in loops:
+            l[layer].uv = c + (l[layer].uv - c) * k
+    bmesh.update_edit_mesh(me)
+    bpy.ops.uv.pack_islands(rotate=True, scale=True, margin_method="FRACTION", margin=UV_MARGIN,
+                            shape_method="CONCAVE")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    p50, p95 = _uv_stretch(me)
+    print(f"UV：{len(islands)} 個島，拉伸比（面積加權）p50 {p50:.2f}、p95 {p95:.2f}")
+
+
+def _bake_buffers(mesh):
+    """Cycles 烘三張浮點圖：位置、物件空間法線、(材質編號＋1, 凸度, AO)。回傳 {種類: (S*S, 4) 陣列}。"""
+    import numpy as np
+    scene = bpy.context.scene
+    me = mesh.data
+    old_engine, old_mats = scene.render.engine, list(me.materials)
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.use_adaptive_sampling = False
+    img = bpy.data.images.new("_TexBake", TEX_SIZE, TEX_SIZE, alpha=True, float_buffer=True)
+    img.colorspace_settings.name = "Non-Color"
+    temp = []
+    for i in range(len(old_mats)):
+        m = bpy.data.materials.new(f"_TexBake{i}")
+        m.use_nodes = True
+        nt = m.node_tree
+        nt.nodes.clear()
+        geo = nt.nodes.new("ShaderNodeNewGeometry")
+        ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
+        ao.samples = 16
+        ao.inputs["Distance"].default_value = 0.06
+        comb = nt.nodes.new("ShaderNodeCombineXYZ")
+        comb.inputs[0].default_value = i + 1
+        emit = nt.nodes.new("ShaderNodeEmission")
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        nt.links.new(geo.outputs["Pointiness"], comb.inputs[1])
+        nt.links.new(ao.outputs["AO"], comb.inputs[2])
+        nt.links.new(comb.outputs[0], emit.inputs["Color"])
+        nt.links.new(emit.outputs[0], out.inputs["Surface"])
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = img
+        nt.nodes.active = tex
+        me.materials[i] = m
+        temp.append(m)
+    select_only([mesh], mesh)
+    bufs = {}
+    for kind, samples in (("POSITION", 1), ("NORMAL", 1), ("EMIT", 32)):
+        scene.cycles.samples = samples
+        bpy.ops.object.bake(type=kind, normal_space="OBJECT", margin=0, use_clear=True)
+        a = np.empty(TEX_SIZE * TEX_SIZE * 4, dtype=np.float32)
+        img.pixels.foreach_get(a)
+        bufs[kind] = a.reshape(-1, 4).astype(np.float64)
+    for i, m in enumerate(old_mats):
+        me.materials[i] = m
+    for m in temp:
+        bpy.data.materials.remove(m)
+    bpy.data.images.remove(img)
+    scene.render.engine = old_engine
+    return bufs
+
+
+# 各圖樣的畫法：(位置 P, 法線 N, 凸度 pt, 材質 bbox F, 固有色 base, 材質鍵 key, 圖樣 style) → (顏色, 墨線 0～1)
+# 墨線會讓 _MaskMap G 變低（甲片縫、帽縫在 shader 裡比較早進陰影，像手繪的陰影線）
+
+
+def _ref_rgb(role, fallback):
+    import numpy as np
+    key = PAINT_REF.get(role)
+    return _rgb(key) if key in COLORS else np.asarray(fallback, dtype=np.float64)
+
+
+def _ref_frame(F, role, sx=None):
+    key = PAINT_REF.get(role)
+    return F.get(key if sx is None else (key, sx))
+
+
+def _paint_skin(P, N, pt, F, base, key, style):
+    import numpy as np
+    col = np.tile(base, (len(P), 1))
+    pink = _ref_rgb("pink", (0.89, 0.60, 0.59))
+    nose = _ref_frame(F, "nose")
+    if nose is None:
+        return col, np.zeros(len(P))
+    # 嘴尖越往前越粉、越深（量化成 3 階）
+    d = np.linalg.norm(P - nose["c"], axis=1) + (_fbm(P, 70, 2, 3) - 0.5) * 0.03
+    col = _lerp(col, pink * 0.92, 0.55 * _quant(1 - _step(0.03, 0.17, d), 3))
+    for sx in (1, -1):                         # 腮紅：眼睛和鼻子之間、偏下偏外的一塊硬邊色塊
+        eye = _ref_frame(F, "eye", sx)
+        if eye is None:
+            continue
+        cheek = eye["c"] + (nose["c"] - eye["c"]) * 0.32 + np.array([0.022 * sx, 0.0, -0.05])
+        d = np.linalg.norm(P - cheek, axis=1) + (_fbm(P, 90, 2, 5) - 0.5) * 0.012
+        col = _lerp(col, pink, 0.6 * (d < 0.032) + 0.25 * ((d >= 0.032) & (d < 0.042)))
+    return col, np.zeros(len(P))
+
+
+def _paint_belly(P, N, pt, F, base, key, style):
+    import numpy as np
+    col = np.tile(base, (len(P), 1))
+    col[(np.abs(P[:, 0]) < 0.05 + (_fbm(P, 30, 2, 13) - 0.5) * 0.04) & (N[:, 1] < -0.5)] *= 1.03   # 肚子中線亮一階
+    w = P[:, 2] / 0.05 + (_fbm(P, 40, 2, 11) - 0.5) * 0.8    # 肚皮的橫向皺褶線（淡）
+    fold = (np.mod(w, 1.0) < 0.07) & (N[:, 1] < -0.5)
+    col[fold] *= 0.96
+    return col, fold * 0.4
+
+
+def _paint_gradient(P, N, pt, F, base, key, style):
+    """由下往上變亮的 3 階漸層（內耳）。"""
+    import numpy as np
+    f = F[key]
+    t = _quant(_step(f["lo"][2], f["hi"][2], P[:, 2]), 3)
+    return _lerp(np.tile(base * 0.86, (len(P), 1)), base * 1.06, t), np.zeros(len(P))
+
+
+def _shell_frame(F):
+    """背殼橢球的中心與半徑：優先用參數區的 SHELL_C／SHELL_R，沒有就用殼紋材質的 bbox 推（殼的下緣當中心高度）。"""
+    import numpy as np
+    c, r = globals().get("SHELL_C"), globals().get("SHELL_R")
+    if c is not None and r is not None:
+        return np.array(c, dtype=np.float64), np.array(r, dtype=np.float64)
+    fs = [F[k] for k, s in PAINT_STYLE.items() if s in ("scutes", "scutes_small") and k in F]
+    lo, hi = np.min([f["lo"] for f in fs], axis=0), np.max([f["hi"] for f in fs], axis=0)
+    return np.array([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2]]), np.maximum(
+        np.array([(hi[0] - lo[0]) / 2, (hi[1] - lo[1]) / 2, hi[2] - lo[2]]), 1e-3)
+
+
+def _paint_scutes(P, N, pt, F, base, key, style):
+    """甲片：繞背殼中軸的角度 × 前後位置排成交錯的磚格；前緣磨亮、後緣壓暗、甲片縫畫墨線。
+    scutes（活動殼帶）一條一排長甲片，列沿 y 排（y＝-0.05 起每 0.055 一列，對齊現行殼帶）；
+    scutes_small（肩甲／臀甲／尾巴）是小鱗片，列沿橢球的極角弧長排（前後兩片的表面幾乎垂直 y 軸，直接用 y 會擠成很密的環）。"""
+    import numpy as np
+    sc, sr = _shell_frame(F)
+    warp = (_fbm(P, 55, 2, 21) - 0.5) * 0.007
+    q = (P - sc) / sr
+    az = np.abs(np.arctan2(q[:, 0], q[:, 2]))
+    if style == "scutes_small":
+        theta = np.arccos(np.clip(-q[:, 1] / np.maximum(1e-6, np.linalg.norm(q, axis=1)), -1, 1))
+        u = az * sr[0] * np.maximum(0.15, np.sin(theta)) + warp
+        rowh, bw = 0.038, 0.038
+        v = (theta * sr[1] + warp) / rowh
+    else:
+        u = az * sr[0] + warp
+        rowh, bw = 0.055, 0.036
+        v = (P[:, 1] + 0.05 + warp) / rowh
+    row = np.floor(v)
+    fy = v - row
+    uu = u / bw + 0.5 * np.mod(row, 2)
+    colm = np.floor(uu)
+    fx = uu - colm
+    edge = np.minimum(np.minimum(fx, 1 - fx) * bw, np.minimum(fy, 1 - fy) * rowh)
+    tone = 0.93 + 0.07 * _quant(_hash(row.astype(np.int64), colm.astype(np.int64), 0, 7), 3)
+    col = np.tile(base, (len(P), 1)) * tone[:, None]
+    light = base + (_ref_rgb("thread", (0.96, 0.92, 0.87)) - base) * 0.42
+    col = _lerp(col, light, 0.5 * (fy < 0.14))                # 前緣磨損亮線
+    col[fy > 0.84] *= 0.88                                     # 後緣壓暗（下一片蓋過來的陰影）
+    wear = ((fy < 0.32) & (_noise(P, (150, 150, 60), 23) > 0.64)) | (pt > 0.6)
+    col = _lerp(col, light, 0.5 * wear)                        # 殼帶邊緣、下緣的磨損亮點
+    inner = (N * q).sum(1) < -0.2                              # 殼的內側：UV 被縮小，只畫素色暗面
+    ink = (edge < 0.0024) & ~inner
+    col[ink] = _ref_rgb("ink", base * 0.75) * 0.62
+    col[inner] = base * 0.72
+    return col, ink * 1.0
+
+
+def _paint_cap(P, N, pt, F, base, key, style):
+    """帽頂 6 片縫線＋兩側明線、頂扣；帽簷同心車縫；頂部一塊亮色。"""
+    import numpy as np
+    f = F[key]
+    top = f["hi"][2]
+    dome = P[:, 2] > f["lo"][2] + 0.4 * (top - f["lo"][2])
+    crown = np.array([f["c"][0], f["c"][1] + 0.35 * f["half"][1], top])     # 帽頂中心（帽簷往前伸，中心偏後）
+    rel = P - crown
+    r = np.hypot(rel[:, 0], rel[:, 1])
+    th = np.arctan2(rel[:, 0], rel[:, 1])
+    seam_d = np.abs(np.arcsin(np.clip(np.sin(3 * th), -1, 1))) / 3 * r      # 到最近一條縫的弧長
+    brim = (np.abs(N[:, 2]) > 0.9) & (rel[:, 1] < -0.07)
+    col = np.tile(base, (len(P), 1))
+    hi = _fbm(P, 50, 2, 31) * 0.1 + (N @ np.array([0.0, -0.45, 0.9]))
+    col = _lerp(col, np.minimum(base * 1.25, 1), 0.6 * ((hi > 0.95) & dome))
+    seam = dome & ~brim & (seam_d < 0.002)
+    stitch = dome & ~brim & (np.abs(seam_d - 0.0055) < 0.0013) & _dashes(r, 0.007)
+    button = r < 0.011
+    rows = brim & (np.mod(r / 0.011, 1.0) < 0.22) & _dashes(th * r, 0.007)
+    col[brim & (N[:, 2] < 0)] *= 0.78
+    col[seam | button] = base * 0.62
+    col[stitch | rows] = base + (_ref_rgb("thread", (0.96, 0.92, 0.87)) - base) * 0.65
+    return col, (seam | button) * 1.0
+
+
+def _paint_logo(P, N, pt, F, base, key, style):
+    """圓標：外圈＋信封 V 字（墨色用帽子的顏色）。"""
+    import numpy as np
+    f, cap = F[key], _ref_frame(F, "cap")
+    col = np.tile(base, (len(P), 1))
+    if cap is None:
+        return col, np.zeros(len(P))
+    rel = P - f["c"]
+    n = f["n"] if f["n"] @ (f["c"] - cap["c"]) > 0 else -f["n"]    # 帽標朝外
+    up = np.array([0.0, 0.0, 1.0]) - n * n[2]
+    up /= max(1e-9, np.linalg.norm(up))
+    side = np.cross(up, n)
+    u, w = rel @ side, rel @ up
+    rad = max(f["half"][0], 1e-4)
+    d = np.hypot(u, w) / rad
+    vee = (np.abs(w - (0.25 * rad - 0.75 * np.abs(u))) < 0.12 * rad) & (np.abs(u) < 0.5 * rad)
+    box = (np.maximum(np.abs(u) / 0.55, np.abs(w + 0.05 * rad) / 0.38) / rad)
+    ink = ((d > 0.72) & (d < 0.9)) | vee | (np.abs(box - 1) < 0.12)
+    col[ink] = _ref_rgb("cap", base * 0.5) * 0.9
+    return col, np.zeros(len(P))
+
+
+def _box_seam(P, N, f, inset):
+    """方盒狀零件（包身、包蓋）：每個面離邊 inset 的一圈車縫虛線。"""
+    import numpy as np
+    rel = np.abs(P - f["c"])
+    half = np.maximum(f["half"], 1e-4)
+    axis = np.argmax(np.abs(N), axis=1)
+    d = np.full(len(P), 1.0)
+    s = np.zeros(len(P))
+    for a in range(3):
+        d = np.where(axis != a, np.minimum(d, half[a] - rel[:, a]), d)
+        s = s + np.where(axis != a, P[:, a], 0)
+    return (np.abs(d - inset) < 0.0016) & _dashes(s, 0.006)
+
+
+def _paint_fabric(P, N, pt, F, base, key, style):
+    """布料：拉長的細紋（量化 3 階）；box_fabric 加一圈車縫，shorts 加腰頭、褲口車縫與前襠縫。"""
+    import numpy as np
+    col = np.tile(base, (len(P), 1))
+    grain = _quant(_noise(P, (260, 260, 30), 41), 3)
+    col *= (0.96 + 0.05 * grain)[:, None]
+    ink = np.zeros(len(P), dtype=bool)
+    thread = base + (_ref_rgb("thread", (0.96, 0.92, 0.87)) - base) * 0.55
+    f = F[key]
+    if style == "box_fabric":
+        col[_box_seam(P, N, f, 0.007)] = thread
+    elif style == "shorts":
+        waist = P[:, 2] > f["hi"][2] - 0.022
+        col[waist] *= 0.85
+        ink = np.abs(P[:, 2] - (f["hi"][2] - 0.022)) < 0.0015
+        hem = np.abs(P[:, 2] - (f["lo"][2] + 0.016)) < 0.0013
+        front = (P[:, 1] < f["c"][1]) & (P[:, 2] > f["c"][2])
+        fly = front & (np.abs(np.abs(P[:, 0] - f["c"][0]) - 0.008) < 0.0013)
+        col[(hem | fly) & _dashes(P[:, 0] + P[:, 2], 0.007)] = thread
+        ink |= front & (np.abs(P[:, 0] - f["c"][0]) < 0.0018)
+        col[ink] = base * 0.7
+    else:
+        col[_noise(P, (500, 500, 500), 43) > 0.62] *= 0.92
+    return col, ink * 1.0
+
+
+def _paint_shoe(P, N, pt, F, base, key, style):
+    """皮鞋：鞋頭包片＋車縫、鞋帶、底部一圈鞋底色（分色）。"""
+    import numpy as np
+    col = np.tile(base, (len(P), 1))
+    lace = _ref_rgb("thread", (0.96, 0.92, 0.87)) * 0.92
+    sole = _ref_rgb("sole", base * 0.6) * 1.25
+    ink = np.zeros(len(P), dtype=bool)
+    for sx in (1, -1):
+        f = F.get((key, sx))
+        if not f:
+            continue
+        s = P[:, 0] * sx > 0
+        rel = P - f["c"]
+        toe_y = -0.45 * f["half"][1]
+        col[s & (rel[:, 1] < toe_y)] *= 1.12
+        ink |= s & (np.abs(rel[:, 1] - toe_y) < 0.0016)
+        col[s & (np.abs(rel[:, 1] - toe_y - 0.006) < 0.0012) & _dashes(P[:, 0], 0.006)] = lace * 0.8
+        tongue = s & (np.abs(rel[:, 0]) < 0.022) & (rel[:, 2] > 0.35 * f["half"][2]) \
+            & (rel[:, 1] > toe_y) & (rel[:, 1] < 0.25 * f["half"][1])
+        col[tongue & (np.mod((rel[:, 1] - toe_y) / 0.016, 1.0) < 0.38)] = lace
+        col[s & (P[:, 2] < f["lo"][2] + 0.016)] = sole
+    col[ink] = base * 0.6
+    return col, ink * 1.0
+
+
+def _paint_small(P, N, pt, F, base, key, style):
+    """小件：鞋底紋、鼻孔、眼白下緣、瞳孔亮點、金屬色階。"""
+    import numpy as np
+    col = np.tile(base, (len(P), 1))
+    ink = np.zeros(len(P), dtype=bool)
+    if style == "sole":
+        col[np.mod(P[:, 1] / 0.012, 1.0) < 0.3] *= 0.8
+    elif style == "nose":
+        f = F[key]
+        col[N[:, 2] > 0.55] *= 1.18
+        for sx in (1, -1):
+            hole = f["c"] + np.array([0.011 * sx, -0.8 * f["half"][1], -0.004])
+            ink |= np.linalg.norm(P - hole, axis=1) < 0.0055
+        col[ink] = base * 0.45
+    elif style == "eye_white":
+        for sx in (1, -1):
+            f = F.get((key, sx))
+            if f:
+                low = (P[:, 0] * sx > 0) & (P[:, 2] < f["c"][2] - 0.35 * f["half"][2])
+                col[low] = base * np.array([0.88, 0.9, 0.95])
+    elif style == "pupil":
+        for sx in (1, -1):                     # 亮點：眼白中心 → 瞳孔中心的方向就是瞳孔朝外的方向
+            f, e = F.get((key, sx)), _ref_frame(F, "eye", sx)
+            if f and e:
+                r = max(f["half"])
+                out = (f["c"] - e["c"]) / max(1e-9, np.linalg.norm(f["c"] - e["c"]))
+                for off, size in ((0.45, 0.36), (-0.35, 0.16)):
+                    p0 = f["c"] + out * r * 0.9 + np.array([0.0, 0.0, off * r])
+                    col[(P[:, 0] * sx > 0) & (np.linalg.norm(P - p0, axis=1) < size * r)] = 1.0
+    elif style == "metal":
+        lit = N @ np.array([-0.3, -0.45, 0.84])
+        col = _lerp(np.tile(base * 0.72, (len(P), 1)), np.minimum(base * 1.3, 1), _quant(lit * 0.5 + 0.5, 3))
+    return col, ink * 1.0
+
+
+PAINTERS = {"skin": _paint_skin, "belly": _paint_belly, "gradient": _paint_gradient, "scutes": _paint_scutes,
+            "scutes_small": _paint_scutes, "cap": _paint_cap, "logo": _paint_logo, "box_fabric": _paint_fabric,
+            "fabric": _paint_fabric, "shorts": _paint_fabric, "shoe": _paint_shoe}
+
+
+def _paint_textures(keys, F, bufs):
+    """回傳 (base (S,S,3) sRGB, mask (S,S,3) linear)。"""
+    import numpy as np
+    S = TEX_SIZE
+    emit = bufs["EMIT"]
+    mid = np.rint(emit[:, 0]).astype(np.int64)
+    cov = mid > 0
+    P_all = bufs["POSITION"][:, :3]
+    N_all = bufs["NORMAL"][:, :3] * 2 - 1
+    N_all /= np.maximum(1e-6, np.linalg.norm(N_all, axis=1))[:, None]
+    base = np.zeros((S * S, 3))
+    mask = np.zeros((S * S, 3))
+    for i, key in enumerate(keys):
+        sel = mid == i + 1
+        if not sel.any():
+            continue
+        P, N, pt, ao = P_all[sel], N_all[sel], emit[sel, 1], emit[sel, 2]
+        style = PAINT_STYLE.get(key)
+        if key in COLORS:
+            c0 = _rgb(key)
+        else:
+            print(f"警告：材質 {key} 不在 COLORS，貼圖先塗灰色")
+            c0, style = np.array([0.5, 0.5, 0.5]), None
+        if style not in PAINTERS and style not in ("sole", "nose", "eye_white", "pupil", "metal"):
+            style = None                       # 沒對應的圖樣：固有色＋通用筆觸
+        try:
+            col, ink = (PAINTERS.get(style, _paint_small)(P, N, pt, F, c0, key, style) if style
+                        else (np.tile(c0, (len(P), 1)), np.zeros(len(P))))
+        except Exception as e:                 # 造型改了零件、找不到該有的位置：退回固有色，不讓整支腳本掛掉
+            print(f"警告：材質 {key} 的圖樣 {style} 畫不出來（{e!r}），改用固有色")
+            col, ink = np.tile(c0, (len(P), 1)), np.zeros(len(P))
+        if style not in ("pupil", "eye_white", "metal"):
+            # 共通筆觸：拉長噪聲量化成 3 階的明度斑塊、朝光的面提亮一階、凹處（AO 低）壓暗
+            stroke = _quant((_fbm(P, (30, 30, 10), 2, 51) - 0.5) * 3 + 0.5, 3)
+            lit = N @ np.array([-0.35, -0.45, 0.82])
+            col = col * (0.97 + 0.06 * stroke)[:, None]
+            col[lit > 0.8] *= 1.06
+            col *= (1 - 0.12 * _step(0.6, 0.4, ao))[:, None]
+        spec, cls = STYLE_MASK.get(style, STYLE_MASK[None])
+        base[sel] = np.clip(col, 0, 1)
+        mask[sel, 0] = spec
+        mask[sel, 1] = np.clip(0.5 - 0.35 * _step(0.85, 0.35, ao) - 0.15 * ink, 0, 1)
+        mask[sel, 2] = cls
+    print(f"貼圖：UV 島覆蓋率 {100 * cov.mean():.1f}%")
+
+    # UV 島往外擴，避免 mipmap／雙線性取樣吃到島外的黑色
+    img = np.concatenate([base, mask], axis=1).reshape(S, S, 6)
+    filled = cov.reshape(S, S).copy()
+    for _ in range(TEX_DILATE):
+        acc = np.zeros_like(img)
+        cnt = np.zeros((S, S))
+        for sh in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            acc += np.roll(img * filled[..., None], sh, (0, 1))
+            cnt += np.roll(filled, sh, (0, 1))
+        new = ~filled & (cnt > 0)
+        img[new] = acc[new] / cnt[new, None]
+        filled |= new
+    return img[..., :3], img[..., 3:]
+
+
+def _save_png(name, rgb, path, colorspace):
+    import numpy as np
+    S = rgb.shape[0]
+    img = bpy.data.images.new(name, S, S, alpha=False)
+    img.colorspace_settings.name = colorspace
+    px = np.ones((S, S, 4), dtype=np.float32)
+    px[..., :3] = np.clip(rgb, 0, 1)
+    img.pixels.foreach_set(px.ravel())     # byte 圖的 pixels 直接對應 0～255，不做色彩轉換
+    img.filepath_raw = path
+    img.file_format = "PNG"
+    img.save()
+    return img
+
+
+def use_basemap(mesh, img):
+    """預覽用：toon／flat 材質的固有色改成取樣 _BaseMap（toon 的硬色階不變）。"""
+    for m in mesh.data.materials:
+        if m is None or m is MATS.get("outline"):
+            continue
+        nt = m.node_tree
+        uvn = nt.nodes.new("ShaderNodeUVMap")
+        uvn.uv_map = "UVMap"
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = img
+        nt.links.new(uvn.outputs[0], tex.inputs["Vector"])
+        mul = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == "MULTIPLY"), None)
+        if mul:
+            nt.links.new(tex.outputs["Color"], mul.inputs[1])
+        else:
+            emit = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeEmission")
+            nt.links.new(tex.outputs["Color"], emit.inputs["Color"])
+
+
+def build_textures(mesh, out):
+    """UV0 展開打包、烘出 _BaseMap／_MaskMap 存到 out，預覽材質改吃 _BaseMap。合併網格後、加描邊前呼叫（靜止姿勢）。"""
+    import time
+    t0 = time.time()
+    unwrap_atlas(mesh)
+    t1 = time.time()
+    keys = _slot_keys(mesh.data)
+    bufs = _bake_buffers(mesh)
+    t2 = time.time()
+    base, mask = _paint_textures(keys, _frames(mesh.data, keys), bufs)
+    img = _save_png("AhJia3D_BaseMap", base, os.path.join(out, "AhJia3D_BaseMap.png"), "sRGB")
+    mask_img = _save_png("AhJia3D_MaskMap", mask, os.path.join(out, "AhJia3D_MaskMap.png"), "Non-Color")
+    bpy.data.images.remove(mask_img)
+    use_basemap(mesh, img)
+    print(f"貼圖：UV {t1 - t0:.1f}s、烘焙 {t2 - t1:.1f}s、繪製 {time.time() - t2:.1f}s")
 
 #endregion
 
@@ -1694,6 +2344,7 @@ def main():
     add_expression_drivers(arm, mesh)
     print("骨頭：" + ", ".join(b.name for b in arm.data.bones))
     print("頂點群組：" + ", ".join(g.name for g in mesh.vertex_groups))
+    build_textures(mesh, out)
 
     mesh.data.materials.append(mat("outline"))
     sol = mesh.modifiers.new("Outline", "SOLIDIFY")   # 排在 Armature 之後，描邊跟著變形
