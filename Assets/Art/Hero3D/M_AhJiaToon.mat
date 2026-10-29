@@ -24,11 +24,11 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _BaseMap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: aca07380b3c8f4849a8938599961cbdf, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MaskMap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: 97114328752ee5d47857b4977130c32a, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
@@ -42,8 +42,8 @@ Material:
     - _SpecSize: 0.06
     - _Step1: 0.38
     - _Step2: 0.62
-    - _UseMask: 0
-    - _VertexColor: 1
+    - _UseMask: 1
+    - _VertexColor: 0
     m_Colors:
     - _LightDir: {r: -0.35, g: 0.8, b: -0.5, a: 0}
     - _OutlineColor: {r: 0.231, g: 0.141, b: 0.078, a: 1}
