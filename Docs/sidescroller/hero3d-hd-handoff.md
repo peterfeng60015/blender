@@ -1,7 +1,39 @@
 # 阿甲 3D 精緻度升級：交接（2026-10-29 下班暫停）
 
 作者：協調 session（local_b8eaa63d-3326-4f44-8c4a-088f0c07e17e，上層 local_553e400a-bc1b-493f-a5df-47c8fabd86ec）。
-狀態：**四路實作都已暫停**。Shader 已完成；造型、貼圖、表情都已實作完，各自卡在「subagent 審查」中途（審查已中止，沒有結果）。還沒整合，程式**都沒有 commit**，只在本機各自的 worktree 裡。這份文件是唯一進 repo 的東西。
+狀態：**四路實作都已暫停**。Shader 已完成；造型、貼圖、表情都已實作完，各自卡在「subagent 審查」中途（審查已中止，沒有結果）。還沒整合。
+
+## 0. 換電腦接手（使用者原話：「所有改動中的內容通通上傳／我要開其他電腦接著做」）
+
+四路改動各自 commit 在自己的分支並 push 到 GitHub（`peterfeng60015/blender`），都基於 main 8d8c3db、**都還沒合進 main**：
+
+| 角色 | 分支 | commit | 改動 | 審查 |
+|---|---|---|---|---|
+| 造型 | `claude/happy-montalcini-986b44` | e826ac2 | `hero3d.py` | subagent 審查未完成 |
+| 貼圖 | `claude/epic-easley-7a5be3` | 6e52fd4 | `hero3d.py` | subagent 審查未完成 |
+| Shader | `claude/sweet-goldberg-f4bbf6` | d4fd1b1 | `AhJiaToon.shader`、`M_AhJiaToon.mat`、`Hero3DPreviewSetup.cs`、`hero3d.py` | 已完成 |
+| 表情 | `claude/musing-edison-9fdf4c` | 74a2d49 | `hero3d.py` | subagent 審查未完成 |
+| 整合／交接 | `hero3d-hd` | 本分支 | 本文件與 `hero3d-hd-notes/` | — |
+
+新電腦上：
+```bash
+git fetch origin
+git worktree add ../blender-hero3d-hd hero3d-hd
+git worktree add ../hero3d-shape claude/happy-montalcini-986b44
+git worktree add ../hero3d-texture claude/epic-easley-7a5be3
+git worktree add ../hero3d-shader claude/sweet-goldberg-f4bbf6
+git worktree add ../hero3d-face claude/musing-edison-9fdf4c
+```
+各路的進度檔、分工約定、Shader 的截圖與驗證腳本、關鍵渲染圖都放進了 `Docs/sidescroller/hero3d-hd-notes/`（下面 §2 的本機路徑在新電腦上不存在，改看這個資料夾）：
+- `contract.md`：分工與介面約定（含追加決定、造型提案、看板回報）
+- `pause-shape.md`、`pause-texture.md`、`pause-face.md`：暫停時的進度與「恢復後第一步」
+- `face-handover.md`：表情細節；`shader/HANDOVER-shader.md`：shader 參數表與相容性建議，同資料夾有截圖與驗證腳本
+- `renders/`：新造型的 hero／turnaround、表情總覽、貼圖（舊模型上）效果；其餘圖跑 `hero3d.py` 約 40 秒可重產
+
+**沒有跟著上來的**（只在原電腦）：
+- 4 個工作 session 本身（對話紀錄、context）：新電腦要重開 session，交辦時給它這份文件與對應的 `pause-*.md`。
+- 監控看板 `session-dashboard`（本機 repo，沒有遠端）與這次對它文件的修改。
+- 全域 `~/.claude/CLAUDE.md` 這次新增的規則（變成協調就自動開看板、看板要在開工作 session 之前開好），新電腦要自己補。
 
 ## 1. 目標與使用者的決定
 
@@ -69,8 +101,8 @@ worktree 都在 `/Users/iulee/UnityProject/blender/` 底下，基於 main 8d8c3d
 
 ## 6. 恢復步驟
 
-1. 協調 session 讀這份文件與 §2 的進度檔，通知三個暫停的 session 恢復（各自重派 subagent 審查、修正、重跑、回報）。
-2. 三路回報完成後，協調在 `/Users/iulee/UnityProject/blender-hero3d-hd` 依序套用四份 diff（`git -C <worktree> diff | git apply -3`），依 §5 解衝突，跑一次 `Blender -b --python Tools/Blender/Hero3D/hero3d.py -- --out <scratchpad>`，看新造型＋貼圖＋表情的渲染。
+1. 協調 session 讀這份文件與 `hero3d-hd-notes/` 的進度檔，通知三個暫停的 session 恢復（各自重派 subagent 審查、修正、重跑、回報）。
+2. 三路回報完成後，協調在 `/Users/iulee/UnityProject/blender-hero3d-hd` 依序合併四個分支（使用者同意後；或 `git diff main..<分支> | git apply -3`），依 §5 解衝突，跑一次 `Blender -b --python Tools/Blender/Hero3D/hero3d.py -- --out <scratchpad>`，看新造型＋貼圖＋表情的渲染。
 3. 跨邊界審查（只看 §5 那些介面，各模組內部已由各自 session 審過），再做 Unity 端匯入與預覽截圖、改前改後對照。
 4. 問使用者是否改 `Docs/sidescroller/design.md` 的主角設定；交使用者 review；commit／push 都要先問。
 5. 全部完成後，收尾選項附「刪除所有子session」。

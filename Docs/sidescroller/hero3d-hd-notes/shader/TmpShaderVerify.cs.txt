@@ -1,0 +1,185 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+using UnityEditor.Rendering;
+
+// 暫時的驗證腳本（驗完刪除）
+public static class TmpShaderVerify
+{
+    public static void Run()
+    {
+        try
+        {
+            var outDir = Environment.GetCommandLineArgs().SkipWhile(a => a != "-outDir").Skip(1).First();
+            Hero3DPreviewSetup.Setup();
+            var shader = Shader.Find("Sidescroller/AhJiaToon");
+            Debug.Log("[Verify] HasError=" + ShaderUtil.ShaderHasError(shader));
+            foreach (var m in ShaderUtil.GetShaderMessages(shader))
+                Debug.Log($"[Verify] msg {m.severity} {m.platform} {m.message} {m.messageDetails}");
+            CompileAll(shader);
+            CheckMesh();
+            Shots(outDir);
+            EditorApplication.Exit(0);
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            EditorApplication.Exit(1);
+        }
+    }
+
+    static void CompileAll(Shader shader)
+    {
+        var data = ShaderUtil.GetShaderData(shader);
+        var targets = new[]
+        {
+            (ShaderCompilerPlatform.GLES3x, BuildTarget.Android), (ShaderCompilerPlatform.Vulkan, BuildTarget.Android),
+            (ShaderCompilerPlatform.GLES3x, BuildTarget.WebGL), (ShaderCompilerPlatform.Metal, BuildTarget.StandaloneOSX),
+            (ShaderCompilerPlatform.D3D, BuildTarget.StandaloneWindows64),
+        };
+        for (var s = 0; s < data.SubshaderCount; s++)
+        {
+            var sub = data.GetSubshader(s);
+            for (var p = 0; p < sub.PassCount; p++)
+            {
+                var pass = sub.GetPass(p);
+                foreach (var (plat, bt) in targets)
+                foreach (var st in new[] { ShaderType.Vertex, ShaderType.Fragment })
+                {
+                    var r = pass.CompileVariant(st, new string[0], plat, bt);
+                    var msgs = string.Join(" | ", r.Messages.Select(m => m.severity + ":" + m.message + " L" + m.line));
+                    Debug.Log($"[Verify] compile {pass.Name} {st} {plat}/{bt} ok={r.Success} {msgs}");
+                }
+            }
+        }
+    }
+
+    static void CheckMesh()
+    {
+        var mesh = AssetDatabase.LoadAllAssetsAtPath("Assets/Art/Sidescroller/Models/SsHero3D/SsHero3D.fbx").OfType<Mesh>().First();
+        var v = mesh.vertices; var n = mesh.normals; var t = mesh.tangents;
+        var uv1 = new List<Vector2>(); mesh.GetUVs(1, uv1);
+        var uv0 = new List<Vector2>(); mesh.GetUVs(0, uv0);
+        Debug.Log($"[Verify] mesh {mesh.name} verts={v.Length} uv0={uv0.Count} uv1={uv1.Count} tangents={t.Length} colors={mesh.colors32.Length} blendShapes={mesh.blendShapeCount}");
+        var dec = new Vector3[v.Length];
+        var zeroFlip = 0;
+        for (var i = 0; i < v.Length; i++)
+        {
+            var T = (Vector3)t[i]; var B = Vector3.Cross(n[i], T) * t[i].w;
+            var xy = uv1[i]; var z = Mathf.Sqrt(Mathf.Clamp01(1 - xy.sqrMagnitude));
+            if (1 - xy.sqrMagnitude < -0.01f) zeroFlip++;
+            dec[i] = (xy.x * T + xy.y * B + z * n[i]).normalized;
+        }
+        var groups = new Dictionary<Vector3Int, List<int>>();
+        for (var i = 0; i < v.Length; i++)
+        {
+            var k = Vector3Int.RoundToInt(v[i] * 20000f);
+            if (!groups.TryGetValue(k, out var l)) groups[k] = l = new List<int>();
+            l.Add(i);
+        }
+        float maxAng = 0, sumAng = 0; var cnt = 0; var bad = 0;
+        foreach (var g in groups.Values.Where(g => g.Count > 1))
+            for (var a = 1; a < g.Count; a++)
+            {
+                var ang = Vector3.Angle(dec[g[0]], dec[g[a]]);
+                maxAng = Mathf.Max(maxAng, ang); sumAng += ang; cnt++;
+                if (ang > 5) bad++;
+            }
+        float hardMax = 0;
+        foreach (var g in groups.Values.Where(g => g.Count > 1))
+            for (var a = 1; a < g.Count; a++) hardMax = Mathf.Max(hardMax, Vector3.Angle(n[g[0]], n[g[a]]));
+        Debug.Log($"[Verify] coincident pairs={cnt} decoded max={maxAng:0.00}° avg={(cnt > 0 ? sumAng / cnt : 0):0.000}° >5°={bad}; raw normal max diff={hardMax:0.0}°; |xy|>1={zeroFlip}");
+        float maxDev = 0, sumDev = 0;
+        for (var i = 0; i < v.Length; i++) { var d = Vector3.Angle(dec[i], n[i]); maxDev = Mathf.Max(maxDev, d); sumDev += d; }
+        Debug.Log($"[Verify] smooth vs vertex normal: max={maxDev:0.0}° avg={sumDev / v.Length:0.00}°");
+    }
+
+    static void Shots(string outDir)
+    {
+        var mat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Hero3D/M_AhJiaToon.mat");
+        var cam = Camera.main;
+        var a = GameObject.Find("AhJia_ThreeQuarter"); var s = GameObject.Find("AhJia_Side");
+        // 1. 特寫（1080 高）
+        Render(cam, 1620, 1080, outDir + "/closeup.png");
+
+        // 2. 遊戲比例：正交 size 6、模型 1.3 倍、左右各一隻（翻面檢查）
+        var go = new GameObject("GameCam"); var gc = go.AddComponent<Camera>();
+        gc.CopyFrom(cam); gc.orthographic = true; gc.orthographicSize = 6f / 1.3f;
+        go.transform.position = new Vector3(0.7f, 0.55f, -10f); go.transform.rotation = Quaternion.identity;
+        a.transform.rotation = Quaternion.Euler(0, 70, 0); s.transform.rotation = Quaternion.Euler(0, -70, 0);
+        var full = RenderTex(gc, 1920, 1080);
+        var crop = new Texture2D(400, 220, TextureFormat.RGB24, false);
+        crop.SetPixels(full.GetPixels(960 - 200 + 0, 540 - 110 + 20, 400, 220)); crop.Apply();
+        System.IO.File.WriteAllBytes(outDir + "/game_scale_crop.png", Upscale(crop, 3).EncodeToPNG());
+        System.IO.File.WriteAllBytes(outDir + "/game_scale_full.png", full.EncodeToPNG());
+
+        // 3. 同一鏡頭推遠一倍（透視），描邊像素寬度應不變
+        a.transform.rotation = Quaternion.Euler(0, -45, 0); s.transform.rotation = Quaternion.Euler(0, -90, 0);
+        var p0 = cam.transform.position;
+        cam.transform.position = p0 + cam.transform.forward * -4.2f;
+        Render(cam, 1620, 1080, outDir + "/far.png");
+        cam.transform.position = p0;
+
+        // 4. mask 類別測試：用單色 mask 套整隻（B 四種類別、R=1 高光），只開 mask
+        var cats = new[] { ("skin", 0f), ("shell", 0.33f), ("cloth", 0.66f), ("metal", 1f) };
+        foreach (var (name, b) in cats)
+        {
+            var m = new Texture2D(4, 4, TextureFormat.RGBA32, false, true);
+            m.SetPixels(Enumerable.Repeat(new Color(name == "metal" ? 1 : 0, 0.5f, b, 0), 16).ToArray()); m.Apply();
+            mat.SetTexture("_MaskMap", m); mat.SetFloat("_UseMask", 1);
+            Render(cam, 810, 540, outDir + $"/mask_{name}.png");
+        }
+        mat.SetTexture("_MaskMap", null); mat.SetFloat("_UseMask", 0);
+
+        // 5. 動作中（Run 中段、Melee）蒙皮後的描邊
+        var clips = AssetDatabase.LoadAllAssetsAtPath("Assets/Art/Sidescroller/Models/SsHero3D/SsHero3D.fbx").OfType<AnimationClip>().ToDictionary(c => c.name);
+        foreach (var clipName in new[] { "Run", "Melee" })
+        {
+            var clip = clips[clipName];
+            foreach (var actor in new[] { a, s })
+            {
+                clip.SampleAnimation(actor, clip.length * 0.4f);
+                var skin = actor.GetComponentInChildren<SkinnedMeshRenderer>();
+                var proxy = new GameObject("baked"); proxy.transform.SetParent(skin.transform, false);
+                var mesh = new Mesh(); skin.BakeMesh(mesh, true);
+                proxy.AddComponent<MeshFilter>().sharedMesh = mesh;
+                proxy.AddComponent<MeshRenderer>().sharedMaterials = skin.sharedMaterials;
+                skin.enabled = false;
+            }
+            Render(cam, 1620, 1080, outDir + $"/pose_{clipName}.png");
+            foreach (var actor in new[] { a, s })
+            {
+                UnityEngine.Object.DestroyImmediate(actor.GetComponentInChildren<MeshFilter>().gameObject);
+                actor.GetComponentInChildren<SkinnedMeshRenderer>().enabled = true;
+            }
+        }
+        Debug.Log("[Verify] shots done " + outDir);
+    }
+
+    static Texture2D Upscale(Texture2D src, int k)
+    {
+        var dst = new Texture2D(src.width * k, src.height * k, TextureFormat.RGB24, false);
+        for (var y = 0; y < dst.height; y++)
+        for (var x = 0; x < dst.width; x++) dst.SetPixel(x, y, src.GetPixel(x / k, y / k));
+        dst.Apply();
+        return dst;
+    }
+
+    static Texture2D RenderTex(Camera cam, int w, int h)
+    {
+        var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32);
+        cam.targetTexture = rt; cam.aspect = (float)w / h;
+        cam.Render();
+        RenderTexture.active = rt;
+        var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();
+        RenderTexture.active = null; cam.targetTexture = null;
+        rt.Release();
+        return tex;
+    }
+
+    static void Render(Camera cam, int w, int h, string path) =>
+        System.IO.File.WriteAllBytes(path, RenderTex(cam, w, h).EncodeToPNG());
+}
