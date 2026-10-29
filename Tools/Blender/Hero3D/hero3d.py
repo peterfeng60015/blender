@@ -1657,9 +1657,10 @@ def bake_vertex_colors(mesh):
 
 
 def export_fbx(path):
-    """Unity 用：只帶骨架與網格、全部 Action 各成一段 clip；描邊不在網格上（遊戲裡用 shader 描邊）。"""
+    """Unity 用：只帶骨架與網格、全部 Action 各成一段 clip；描邊不在網格上（遊戲裡用 shader 描邊）。
+    UV 層全部帶上（第二層 OutlineNormal＝描邊法線），切線一起匯出。"""
     bpy.ops.export_scene.fbx(
-        colors_type="SRGB",
+        colors_type="SRGB", use_tspace=True,
         filepath=path, object_types={"ARMATURE", "MESH"}, use_mesh_modifiers=False,
         add_leaf_bones=False, bake_anim=True, bake_anim_use_all_actions=True,
         bake_anim_use_nla_strips=False, bake_anim_force_startend_keying=True,
@@ -2309,6 +2310,76 @@ def build_textures(mesh, out):
 
 #endregion
 
+#region 描邊法線
+
+
+def bake_outline_normals(mesh):
+    """描邊用的平滑法線：位置相同的頂點（硬邊兩側、零件接縫）算成一組，把周圍面法線依角度加權平均，
+    轉成每個角的切線空間 xy 寫進第二個 UV 層 OutlineNormal（Unity 的 TEXCOORD1，z 由 shader 重建）。
+    倒殼沿這個方向擠出，尖角與硬邊不會裂開。切線照第一個 UV 層算（MikkTSpace，和 Unity 匯入時算的一致），
+    網格還沒有 UV 就先依面朝向做方盒投影補上。會改動網格，存完 .blend 才呼叫。"""
+    from mathutils.kdtree import KDTree
+
+    me = mesh.data
+    ngons = [p.index for p in me.polygons if p.loop_total > 4]
+    if ngons:  # MikkTSpace 只吃三角形與四邊形
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bm.faces.ensure_lookup_table()
+        bmesh.ops.triangulate(bm, faces=[bm.faces[i] for i in ngons])
+        bm.to_mesh(me)
+        bm.free()
+    # 零件建模時順手產生的 UVMap 大多是 0（沒有面積，切線會亂掉），這種當成沒有 UV
+    if not me.uv_layers or sum(d.uv.length_squared > 0 for d in me.uv_layers[0].data) < len(me.loops) // 2:
+        uv = me.uv_layers[0] if me.uv_layers else me.uv_layers.new(name="UVMap")
+        for p in me.polygons:
+            ax = max(range(3), key=lambda k: abs(p.normal[k]))
+            u, v = [k for k in range(3) if k != ax]
+            for li in p.loop_indices:
+                co = me.vertices[me.loops[li].vertex_index].co
+                uv.data[li].uv = (co[u], co[v])
+    if len(me.uv_layers) != 1:
+        raise RuntimeError("描邊法線要放第二個 UV 層，但網格已有 %d 層 UV" % len(me.uv_layers))
+
+    # 位置相同（1e-5 公尺內）的頂點併成一組（union-find，鏈狀相鄰也會併在一起）
+    verts = me.vertices
+    kd = KDTree(len(verts))
+    for v in verts:
+        kd.insert(v.co, v.index)
+    kd.balance()
+    parent = list(range(len(verts)))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for v in verts:
+        for _, i, _ in kd.find_range(v.co, 1e-5):
+            parent[root(i)] = root(v.index)
+    group = [root(i) for i in range(len(verts))]
+
+    acc = {}
+    for p in me.polygons:
+        cos = [verts[i].co for i in p.vertices]
+        n = len(cos)
+        for j, vi in enumerate(p.vertices):
+            a, b = cos[j - 1] - cos[j], cos[(j + 1) % n] - cos[j]
+            if a.length_squared > 1e-14 and b.length_squared > 1e-14:
+                g = group[vi]
+                acc[g] = acc.get(g, Vector()) + p.normal * a.angle(b)
+
+    me.calc_tangents(uvmap=me.uv_layers[0].name)
+    out = me.uv_layers.new(name="OutlineNormal")
+    for lp in me.loops:
+        s = acc.get(group[lp.vertex_index])
+        s = s.normalized() if s is not None and s.length > 1e-6 else lp.normal
+        out.data[lp.index].uv = (s.dot(lp.tangent), s.dot(lp.bitangent))
+    me.free_tangents()
+
+#endregion
+
 
 def main():
     global ROOT, COLL
@@ -2413,6 +2484,7 @@ def main():
     scene.camera = cam2
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out, "AhJia3D.blend"))
     bake_vertex_colors(mesh)
+    bake_outline_normals(mesh)
     export_fbx(os.path.join(out, "AhJia3D.fbx"))
     print("輸出完成：" + out)
 

@@ -22,17 +22,39 @@ Material:
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
-    m_TexEnvs: []
+    m_TexEnvs:
+    - _BaseMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MaskMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _OutlineWidth: 0.011
-    - _Shade1: 0.55
-    - _Shade2: 0.8
+    - _MidMix: 0.55
+    - _OutlineDepth: 0.02
+    - _OutlineWidth: 2.5
+    - _RimStrength: 0.45
+    - _RimWidth: 0.28
+    - _ShadowOffset: 0.3
+    - _SpecSize: 0.06
     - _Step1: 0.38
     - _Step2: 0.62
+    - _UseMask: 0
+    - _VertexColor: 1
     m_Colors:
     - _LightDir: {r: -0.35, g: 0.8, b: -0.5, a: 0}
-    - _OutlineColor: {r: 0.23099995, g: 0.14099997, b: 0.07799999, a: 1}
+    - _OutlineColor: {r: 0.231, g: 0.141, b: 0.078, a: 1}
+    - _RimColor: {r: 1, g: 0.93, b: 0.8, a: 1}
+    - _RimDir: {r: 0.8, g: 0.25, b: 0.45, a: 0}
+    - _ShadowCloth: {r: 0.5, g: 0.55, b: 0.72, a: 1}
+    - _ShadowColor: {r: 0.58, g: 0.52, b: 0.6, a: 1}
+    - _ShadowMetal: {r: 0.55, g: 0.5, b: 0.55, a: 1}
+    - _ShadowShell: {r: 0.6, g: 0.47, b: 0.55, a: 1}
+    - _ShadowSkin: {r: 0.78, g: 0.55, b: 0.6, a: 1}
+    - _SpecColor: {r: 1, g: 1, b: 1, a: 1}
     - _Tint: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

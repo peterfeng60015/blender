@@ -8,8 +8,10 @@ using UnityEngine;
 
 /// <summary>
 /// 阿甲 3D（Tools/Blender/Hero3D/hero3d.py 匯出的 AhJia3D.fbx，放進專案時改名 SsHero3D.fbx）在 Unity 的設定，可重複執行：
-///   1. 材質 M_AhJiaToon（shader Sidescroller/AhJiaToon：頂點色＋3 階明暗＋描邊），並把 FBX 內的 M_AhJia 對應過去。
-///   2. FBX 匯入設定：Generic 骨架、套用軸向轉換、動畫片段改成短名（Idle、Run…）、Idle／Run／Jump 循環。
+///   1. 材質 M_AhJiaToon（shader Sidescroller/AhJiaToon：貼圖或頂點色＋硬色階明暗＋rim＋高光＋描邊），並把 FBX 內的 M_AhJia 對應過去。
+///      模型旁有 SsHero3D_BaseMap.png／SsHero3D_MaskMap.png 時設好匯入格式並接上材質，沒有就用頂點色。
+///   2. FBX 匯入設定：Generic 骨架、套用軸向轉換、切線用 MikkTSpace、UV1 保留給描邊法線、
+///      動畫片段改成短名（Idle、Run…）、Idle／Run／Jump 循環。
 ///   3. 遊戲用動畫控制器 SsHero3D_Anim：6 個狀態、沒有轉換，由 HeroVisual 用程式切換（和模型一起進資源包）。
 ///   4. 預覽用動畫控制器 AhJiaPreview：依序輪播 6 個動作。
 ///   5. 預覽場景 Hero3DPreview：3/4 視角與側面（遊戲視角）各一隻，按 Play 就會動（不進 Build Settings、不進資源包）。
@@ -23,6 +25,8 @@ public static class Hero3DPreviewSetup
     private const string GameControllerPath = ModelFolder + "/SsHero3D_Anim.controller";
     private const string ShaderName = "Sidescroller/AhJiaToon";
     private const string MaterialPath = Folder + "/M_AhJiaToon.mat";
+    private const string BaseMapPath = ModelFolder + "/SsHero3D_BaseMap.png";
+    private const string MaskMapPath = ModelFolder + "/SsHero3D_MaskMap.png";
     private const string ControllerPath = Folder + "/AhJiaPreview.controller";
     private const string ScenePath = Folder + "/Hero3DPreview.unity";
     private const string LogPrefix = "[Hero3DPreviewSetup] ";
@@ -142,7 +146,41 @@ public static class Hero3DPreviewSetup
             material.shader = shader;
             EditorUtility.SetDirty(material);
         }
+
+        // 有貼圖就改用貼圖＋mask，頂點色退場；沒有就維持頂點色後備
+        var baseMap = SetupTexture(BaseMapPath, true, TextureImporterFormat.ASTC_6x6);
+        var maskMap = SetupTexture(MaskMapPath, false, TextureImporterFormat.ASTC_4x4);
+        material.SetTexture("_BaseMap", baseMap);
+        material.SetTexture("_MaskMap", maskMap);
+        material.SetFloat("_VertexColor", baseMap != null ? 0f : 1f);
+        material.SetFloat("_UseMask", maskMap != null ? 1f : 0f);
+        EditorUtility.SetDirty(material);
+        AssetDatabase.SaveAssets();
         return material;
+    }
+
+    /// <summary>
+    /// 角色貼圖的匯入設定：albedo 是 sRGB、mask 是 linear；1024、有 mipmap、Clamp。
+    /// Android 用 ASTC（mask 的材質類別要準，用 4x4）；WebGL 照建置設定的貼圖格式（見 shader 報告）。不存在回 null。
+    /// </summary>
+    private static Texture2D SetupTexture(string path, bool sRGB, TextureImporterFormat androidFormat)
+    {
+        var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+        if (importer == null)
+            return null;
+        importer.textureType = TextureImporterType.Default;
+        importer.sRGBTexture = sRGB;
+        importer.alphaSource = TextureImporterAlphaSource.None;
+        importer.mipmapEnabled = true;
+        importer.wrapMode = TextureWrapMode.Clamp;
+        importer.maxTextureSize = 1024;
+        importer.textureCompression = TextureImporterCompression.CompressedHQ;
+        importer.SetPlatformTextureSettings(new TextureImporterPlatformSettings
+        {
+            name = "Android", overridden = true, maxTextureSize = 1024, format = androidFormat,
+        });
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
     }
 
     private static void SetupModelImporter(Material material)
@@ -154,6 +192,11 @@ public static class Hero3DPreviewSetup
         importer.bakeAxisConversion = true;
         importer.importCameras = false;
         importer.importLights = false;
+        // 描邊法線存在 UV1、以切線空間編碼：切線要照 UV0 用 MikkTSpace 算（和 Blender 端一致），UV1 不能被光照貼圖 UV 蓋掉
+        importer.importNormals = ModelImporterNormals.Import;
+        importer.importTangents = ModelImporterTangents.CalculateMikk;
+        importer.swapUVChannels = false;
+        importer.generateSecondaryUV = false;
         importer.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), "M_AhJia"), material);
 
         // FBX 裡的片段名稱是「AhJia_Rig|AhJia_Idle」，取最後一個 '_' 之後當短名
