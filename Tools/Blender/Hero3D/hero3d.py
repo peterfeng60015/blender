@@ -10,7 +10,8 @@
   AhJia3D_pose.png         測試姿勢（檢查骨架與權重）
   AhJia3D_pose_hero.png    測試姿勢的 3/4 特寫
   AhJia3D_actions.png      動作總覽（Idle、Run、Jump、Melee、Shoot、Hurt，各取 6 格）
-  AhJia3D.fbx              給 Unity：骨架＋網格＋全部動作
+  AhJia3D_faces.png        表情總覽（無表情＋每個 shape key 一格；上排 3/4、下排側面）
+  AhJia3D.fbx              給 Unity：骨架＋網格（含表情 blend shape）＋全部動作（表情跟著各 clip）
   stats.txt                各部位三角形數
 骨架照 Unity Humanoid 的命名（Hips、Spine、Chest、Neck、Head、LeftUpperLeg…），
 另有 Snout、LeftEar/RightEar、Tail1～3、Bag 這些非人形的骨頭。
@@ -23,7 +24,7 @@ import sys
 
 import bmesh
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Quaternion, Vector
 
 #region 參數
 
@@ -38,20 +39,22 @@ COLORS = {
     "cap_logo": "#F4EBDD", "bag": "#1F9E9A", "bag_flap": "#17807C", "strap": "#14615E", "buckle": "#E8B830",
     "shorts": "#34406B", "shoe": "#5A3A26", "sole": "#3A2418", "nose": "#6B3E3E", "eye_white": "#FAF6EE",
     "pupil": "#1A1414", "ear_inner": "#E39A96", "outline": "#3B2414", "lace": "#F4EBDD", "scarf": "#EDB437",
+    "brow": "#4A2E1C", "mouth": "#3A1418", "tongue": "#C2606A",
 }
 
 SHELL_C = (0.0, 0.11, 0.50)   # 背殼橢球中心（x 左右、y 前後、z 高）
 SHELL_R = (0.25, 0.31, 0.33)
 SHELL_ZCUT = 0.37             # 殼的下緣（側面看是圓頂＋下緣，後甲往後微微下垂）
 
-# 眼睛：+X 那顆的眼白中心與半徑（-X 鏡射）；表情 session 的眼皮、眉毛也讀這兩個值
+# 眼睛：+X 那顆的眼白中心與半徑（-X 鏡射）；表情的眼皮、眉毛也讀這兩個值
 EYE_C = (0.081, -0.219, 0.886)
 EYE_R = 0.036
+EYE_DIR = (0.62, -0.78, 0.05)    # +X 眼睛的正前方（瞳孔方向）
 # 帽子在眼睛正上方（眉毛區）最低處的 z；build_cap 依它擺帽子高度。眉毛最高不超過 CAP_BRIM_Z − 0.005
 CAP_BRIM_Z = 0.958
 
 # 網格密度（合計約 18k 三角形）
-D = dict(shell_nv=44, shell_rows=(4, 3, 9), fill=(16, 10), eye=(12, 7, 8, 5, 12, 8), nose=(12, 8),
+D = dict(shell_nv=44, shell_rows=(4, 3, 9), fill=(16, 10), eye=(12, 7, 8, 5), nose=(12, 8),
          ear=(8, 7), cap=(40, 10, 14), hand=(12, 8, 8), shoe=(16, 9, 20), bag_seg=3, pipe=4, strap=(4, 1))
 
 #endregion
@@ -500,19 +503,15 @@ def build_shell():
 
 def build_head_parts():
     objs = []
-    # 眼睛：眼白＋瞳孔＋半垂的眼皮（冷面笑匠）
+    # 眼睛：眼白＋瞳孔（眼皮在「臉部表情」的 Eyelids）
     bm = bmesh.new()
     for sx in (1, -1):
         c = mirror_x(EYE_C, sx)
-        out = Vector((0.62 * sx, -0.78, 0.05)).normalized()
+        out = Vector((EYE_DIR[0] * sx, EYE_DIR[1], EYE_DIR[2])).normalized()
         e = D["eye"]
         add_ellipsoid(bm, c, (EYE_R, EYE_R, EYE_R * 1.09), seg=e[0], rings=e[1], mi=0)
         add_ellipsoid(bm, c + out * (EYE_R * 0.73), (EYE_R * 0.48, EYE_R * 0.48, EYE_R * 0.58), seg=e[2], rings=e[3], mi=1)
-        lid = add_ellipsoid(bm, c, (0.039, 0.039, 0.041), seg=e[4], rings=e[5], mi=2,
-                            rot=Matrix.Rotation(math.atan2(out.x, -out.y), 3, "Z") @ Matrix.Rotation(math.radians(-20), 3, "X"))
-        # 只留上半（眼皮）：刪掉 z 低於眼睛中心＋一點的頂點
-        bmesh.ops.delete(bm, geom=[v for v in lid if v.co.z < c.z + 0.006], context="VERTS")
-    objs.append(make_object("Eyes", bm, ["eye_white", "pupil", "skin"]))
+    objs.append(make_object("Eyes", bm, ["eye_white", "pupil"]))
 
     # 鼻子
     bm = bmesh.new()
@@ -816,6 +815,340 @@ def build_bag():
 
 #endregion
 
+#region 臉部表情（眉毛、眼皮、嘴＋shape key）
+
+# shape key 名稱（Unity 的 blend shape），順序也是 AhJia3D_faces.png 的格子順序（第一格是無表情）
+FACE_KEYS = ["Blink_L", "Blink_R", "Brow_Angry", "Brow_Sad", "Brow_Up", "Mouth_Open", "Mouth_Smirk", "Mouth_Frown",
+             "Squint"]
+
+# 眼皮下緣／上緣的角度（度，0＝眼睛正上方、90＝正前方、180＝正下方）；預設是冷面的半垂眼
+LID_REST = (92.0, 148.0)          # (上眼皮下緣, 下眼皮上緣)
+LID_KEYS = {                      # 各 shape key 對 (左眼上, 左眼下, 右眼上, 右眼下) 的位移
+    "Blink_L": (50, -10, 0, 0), "Blink_R": (0, 0, 50, -10), "Squint": (16, -22, 16, -22),
+}
+
+
+def eye_frame(sx):
+    """眼睛中心與局部座標：f 正前方、u 往上、s 往外側（遠離鼻樑）。"""
+    c = Vector((EYE_C[0] * sx, EYE_C[1], EYE_C[2]))
+    f = Vector((EYE_DIR[0] * sx, EYE_DIR[1], EYE_DIR[2])).normalized()
+    u = (Vector((0, 0, 1)) - f * f.z).normalized()
+    s = f.cross(u)
+    if s.x * sx < 0:
+        s = -s
+    return c, f, u, s
+
+
+def sph(frame, th, la, r):
+    """眼睛周圍球面上的點：th 從正上方往前往下轉的角度、la 往外側的角度（度）、r 半徑。"""
+    c, f, u, s = frame
+    th, la = math.radians(th), math.radians(la)
+    return c + r * (math.sin(la) * s + math.cos(la) * (math.sin(th) * f + math.cos(th) * u))
+
+
+def shell_patch(rows, cols, point):
+    """rows×cols 的雙層曲面（外層＋內層＋四邊封口），point(i, j, outer) → 座標。回傳 (頂點, 面)。"""
+    nr, nc = len(rows), len(cols)
+    verts = [point(i, j, outer) for outer in (True, False) for i in range(nr) for j in range(nc)]
+    idx = lambda outer, i, j: (0 if outer else nr * nc) + i * nc + j
+    faces = []
+    for i in range(nr - 1):
+        for j in range(nc - 1):
+            faces.append((idx(True, i, j), idx(True, i + 1, j), idx(True, i + 1, j + 1), idx(True, i, j + 1)))
+            faces.append((idx(False, i, j), idx(False, i, j + 1), idx(False, i + 1, j + 1), idx(False, i + 1, j)))
+    for i in range(nr - 1):                                       # 左右兩邊
+        for j in (0, nc - 1):
+            q = (idx(True, i, j), idx(False, i, j), idx(False, i + 1, j), idx(True, i + 1, j))
+            faces.append(q if j == 0 else q[::-1])
+    for j in range(nc - 1):                                       # 上下兩緣
+        for i in (0, nr - 1):
+            q = (idx(True, i, j), idx(True, i, j + 1), idx(False, i, j + 1), idx(False, i, j))
+            faces.append(q if i == 0 else q[::-1])
+    return verts, faces
+
+
+def lid_mesh(edges):
+    """兩眼的上下眼皮；edges＝(左上, 左下, 右上, 右下) 的緣角度。上眼皮從頭頂後方蓋到緣，下眼皮從緣蓋到下巴後方。"""
+    verts, faces = [], []
+    cols = [-85 + 170 * j / 8 for j in range(9)]
+    for k, sx in enumerate((1, -1)):
+        fr = eye_frame(sx)
+        up, lo = edges[2 * k], edges[2 * k + 1]
+        for th0, th1, r_out, r_in, n in ((-40, up, 1.20, 1.08, 5), (lo, 235, 1.13, 1.04, 3)):
+            rows = list(range(n + 1))
+
+            def point(i, j, outer, th0=th0, th1=th1, r_out=r_out, r_in=r_in, n=n):
+                la = cols[j]
+                # 外眼角稍微下垂（冷面、沒睡飽的眼神）
+                th = th0 + (th1 - th0) * i / n + (6 * la / 85 if (i == n and th0 < 0) else 0)
+                return sph(fr, th, la, EYE_R * (r_out if outer else r_in))
+            v, fc = shell_patch(rows, cols, point)
+            base = len(verts)
+            verts += v
+            # 兩眼的局部座標一左手一右手（s 都朝外），右眼的面要反過來法線才會朝外
+            faces += [tuple(base + x for x in (f if sx > 0 else f[::-1])) for f in fc]
+    return verts, faces
+
+
+# 眉毛：沿眼睛外側角度 la 的一條粗短眉，角度 th 決定高低
+BROW_R = 1.5                      # 眉毛離眼睛中心（×EYE_R）
+BROW_TH = 42.0
+BROW_KEYS = {                     # n：-1 眉頭（靠鼻樑）～ 1 眉尾，回傳 (th 的位移（正＝往下）, 往上平移 公尺)
+    "Brow_Angry": lambda n: (8 - 14 * n, 0.0), "Brow_Sad": lambda n: (-6 + 14 * n, 0.0),
+    "Brow_Up": lambda n: (-4, 0.008),
+}
+
+
+def brow_mesh(delta):
+    verts, faces = [], []
+    cols = [-45 + 95 * j / 6 for j in range(7)]
+    for sx in (1, -1):
+        fr = eye_frame(sx)
+        r = EYE_R * BROW_R
+        base = len(verts)
+        for la in cols:
+            n = (la + 45) / 47.5 - 1
+            dth, lift = delta(n)
+            th = BROW_TH - 4 * (1 - n * n) + dth          # 中間微拱
+            h = math.degrees((0.016 - 0.006 * (n + 1) / 2) / r) / 2     # 眉頭粗、眉尾細
+            for a, b in ((-h, 0), (h, 0), (h, 0.008), (-h, 0.008)):
+                verts.append(sph(fr, th + a, la, r + b) + Vector((0, 0, lift)))
+        # 不超過帽簷：整條眉往下移（基本形與每個 shape key 各自夾）
+        over = max(v.z for v in verts[base:]) - (CAP_BRIM_Z - 0.005)
+        if over > 0:
+            verts[base:] = [v - Vector((0, 0, over)) for v in verts[base:]]
+        for j in range(len(cols) - 1):
+            for q in range(4):
+                a0, a1 = base + j * 4 + q, base + j * 4 + (q + 1) % 4
+                faces.append((a0, a0 + 4, a1 + 4, a1) if sx > 0 else (a0, a1, a1 + 4, a0 + 4))
+        last = base + (len(cols) - 1) * 4
+        cap0, cap1 = (base + 3, base + 2, base + 1, base), (last, last + 1, last + 2, last + 3)
+        faces += [cap0[::-1], cap1[::-1]] if sx > 0 else [cap0, cap1]
+    return verts, faces
+
+
+# 嘴：長嘴兩側的嘴縫（貼在身體表面的薄片），u＝0 嘴角～1 前端；a＝長嘴剖面上的角度（0 正下方、90 正側面）
+# 長嘴的中軸取 BONES 裡 Snout 骨的頭尾（射線從中軸往外打）；嘴角、前端在骨頭上的比例是 MOUTH_T
+FACE_BONES = {"head": "Head", "snout": "Snout"}
+MOUTH_T = (0.175, 0.84)
+MOUTH_KEYS = {                     # 嘴角上下（度），u 與左右（sx）的函式；撇嘴主要在左邊（+X）
+    "Mouth_Smirk": lambda u, sx: 30 * (1 - u) ** 2 * (1.0 if sx > 0 else 0.35),
+    "Mouth_Frown": lambda u, sx: -16 * (1 - u) ** 2,
+}
+JAW_OPEN = 17                      # Mouth_Open 下顎繞嘴角往下轉的角度
+JAW_BAND = 22                      # 嘴縫下方這麼寬（度）的皮膚張嘴時被拉開，由口腔薄片蓋住
+
+
+def snout_line():
+    """長嘴中軸 ((y0, z0), (y1, z1))；找不到 Snout 骨時用舊造型的值並警告。"""
+    for name, head, tail, _ in BONES:
+        if name == FACE_BONES["snout"]:
+            return (head[1], head[2]), (tail[1], tail[2])
+    print(f"警告：BONES 裡沒有 {FACE_BONES['snout']}，嘴的位置改用預設長嘴")
+    return (-0.20, 0.83), (-0.40, 0.775)
+
+
+def mouth_y():
+    (y0, _), (y1, _) = snout_line()
+    return tuple(y0 + (y1 - y0) * t for t in MOUTH_T)
+
+
+def mouth_angle(u):
+    return 78 - 40 * max(0.0, u) ** 0.8
+
+
+def snout_axis_z(y):
+    (y0, z0), (y1, z1) = snout_line()
+    return z0 + (z1 - z0) * (y - y0) / (y1 - y0)
+
+
+def on_body(body, y, a, sx):
+    """長嘴剖面角度 a 處的身體表面（往外推一點，避免和皮膚重疊閃爍）。"""
+    axis = Vector((0, y, snout_axis_z(y)))
+    d = Vector((math.sin(math.radians(a)) * sx, 0, -math.cos(math.radians(a))))
+    hit, co, nrm, _ = body.ray_cast(axis + d * 0.2, -d, distance=0.2)
+    if not hit:
+        return axis + d * 0.05
+    return co + nrm * 0.0018
+
+
+def jaw(p, amount=1.0):
+    """Mouth_Open 的下顎：嘴縫以下、嘴角往前的長嘴繞嘴角往下轉；嘴縫附近一條皮膚漸變（被拉開的部分）。"""
+    my = mouth_y()
+    u = (p.y - my[0]) / (my[1] - my[0])
+    az = snout_axis_z(p.y)
+    if u <= 0 or Vector((p.x, p.z - az)).length > 0.09:
+        return p.copy()
+    a = math.degrees(math.atan2(abs(p.x), az - p.z))
+    w = smoothstep(0.0, 0.3, u) * (1.0 - smoothstep(mouth_angle(u) - JAW_BAND, mouth_angle(u) - 2, a))
+    pivot = Vector((0, my[0], snout_axis_z(my[0])))
+    return pivot + Matrix.Rotation(math.radians(JAW_OPEN * amount * w), 3, "X") @ (p - pivot)
+
+
+def mouth_mesh(body, key):
+    """每一段由上到下 4 排頂點：嘴縫上緣、嘴縫下緣、舌頭上緣、下顎；平常後 3 排重疊（嘴縫只是一條線）。"""
+    verts, faces = [], []
+    n = 10
+    shift = MOUTH_KEYS.get(key, lambda u, sx: 0)
+    my = mouth_y()
+    for sx in (1, -1):
+        base = len(verts)
+        for i in range(n + 1):
+            u = i / n
+            y = my[0] + (my[1] - my[0]) * u
+            a = mouth_angle(u) + shift(u, sx)
+            w = 1.5 + 4.5 * math.sin(math.pi * min(1.0, 0.15 + u))        # 嘴縫寬度（度），嘴角收尖
+            if key == "Mouth_Open":
+                rows = [on_body(body, y, a + w / 2, sx), on_body(body, y, a - w / 2, sx),
+                        jaw(on_body(body, y, a - JAW_BAND * 0.55, sx)), jaw(on_body(body, y, a - JAW_BAND - 1, sx))]
+            else:
+                rows = [on_body(body, y, a + w / 2, sx)] + [on_body(body, y, a - w / 2, sx)] * 3
+            verts += rows
+        for i in range(n):
+            for r in range(3):
+                a0, a1 = base + i * 4 + r, base + (i + 1) * 4 + r
+                faces.append((a0, a1, a1 + 1, a0 + 1) if sx > 0 else (a0, a0 + 1, a1 + 1, a1))
+    return verts, faces
+
+
+def face_part(name, mesh_fn, keys, mats, mat_of_face=None):
+    """mesh_fn(key 名或 None) → (頂點, 面)；None 是基本形，其他是各 shape key 的形狀（拓樸相同）。"""
+    verts, faces = mesh_fn(None)
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    for m in mats:
+        me.materials.append(mat(m))
+    if mat_of_face:
+        for p in me.polygons:
+            p.material_index = mat_of_face(p.index)
+    me.shade_smooth()
+    obj = bpy.data.objects.new(name, me)
+    COLL.objects.link(obj)
+    obj.parent = ROOT
+    obj.shape_key_add(name="Basis")
+    for k in keys:
+        sk = obj.shape_key_add(name=k)
+        for p, co in zip(sk.data, mesh_fn(k)[0]):
+            p.co = co
+    return obj
+
+
+def build_face(body):
+    """眉毛、眼皮、嘴：依 EYE_C／EYE_R 與身體表面擺放，各自帶上對應的 shape key（合併網格時依名稱併在一起）。"""
+    def lids(k):
+        d = LID_KEYS.get(k, (0, 0, 0, 0))
+        return lid_mesh(tuple(LID_REST[i % 2] + d[i] for i in range(4)))
+
+    def brows(k):
+        return brow_mesh(BROW_KEYS.get(k, lambda n: (0.0, 0.0)))
+
+    def mouth(k):
+        return mouth_mesh(body, k)
+
+    eyelids = face_part("Eyelids", lids, list(LID_KEYS), ["skin"])
+    brow = face_part("Brows", brows, list(BROW_KEYS), ["brow"])
+    # 嘴的每一段三條帶子：上兩條是口腔（暗）、最下面是舌頭（平常寬度 0，張嘴才看得到）
+    mouth_obj = face_part("Mouth", mouth, ["Mouth_Open"] + list(MOUTH_KEYS), ["mouth", "tongue"],
+                          mat_of_face=lambda i: 1 if i % 3 == 2 else 0)
+    # 身體也帶 Mouth_Open（下顎），合併網格時和嘴的同名 key 併成一個
+    body.shape_key_add(name="Basis")
+    sk = body.shape_key_add(name="Mouth_Open")
+    for p, v in zip(sk.data, body.data.vertices):
+        p.co = jaw(v.co)
+    return [eyelids, brow, mouth_obj]
+
+
+def face_bind_rules(arm):
+    """Eyelids／Brows 綁頭；Mouth 前段跟長嘴、嘴角往頭漸變。骨頭不存在時退回頭骨（並警告）。"""
+    names = {b.name for b in arm.data.bones}
+    head = FACE_BONES["head"] if FACE_BONES["head"] in names else arm.data.bones[0].name
+    snout = FACE_BONES["snout"] if FACE_BONES["snout"] in names else head
+    if head != FACE_BONES["head"] or snout != FACE_BONES["snout"]:
+        print(f"警告：臉部零件改綁 {head}／{snout}（骨架裡沒有 {FACE_BONES['head']} 或 {FACE_BONES['snout']}）")
+    (y0, _), (y1, _) = snout_line()
+    ramp = (y0, y0 + (y1 - y0) * 0.35)
+
+    def mouth(co):
+        w = smoothstep(ramp[0], ramp[1], co.y)
+        return {snout: w, head: 1.0 - w} if snout != head else {head: 1.0}
+    return {"Eyelids": lambda co: {head: 1.0}, "Brows": lambda co: {head: 1.0}, "Mouth": mouth}
+
+
+def add_expression_drivers(arm, mesh):
+    """表情的值放在骨架物件的自訂屬性（和骨頭一起 key 在同一個 Action），shape key 用 driver 讀它。
+    FBX 匯出時逐格烘焙 shape key 的值，每個 Action 的表情各自跟著自己的 clip 進 Unity。"""
+    keys = mesh.data.shape_keys.key_blocks
+    for k in FACE_KEYS:
+        arm[k] = 0.0
+        arm.id_properties_ui(k).update(min=0.0, max=1.0)
+        fc = keys[k].driver_add("value")
+        drv = fc.driver
+        drv.type = "AVERAGE"
+        var = drv.variables.new()
+        var.type = "SINGLE_PROP"
+        var.targets[0].id = arm
+        var.targets[0].data_path = f'["{k}"]'
+
+
+def set_expression(arm, vals):
+    for k in FACE_KEYS:
+        arm[k] = float(vals.get(k, 0.0))
+
+
+def render_face_sheet(scene, inst, arm, path, cell=360):
+    """表情總覽：第一格無表情，之後每個 shape key 一格；上排 3/4、下排側面，頭部特寫。"""
+    import numpy as np
+    tmp = os.path.join(os.path.dirname(path), "_face.png")
+    cam = camera(scene, "CamFace", 0.50, (0, 0, 0))
+    rot0 = inst.rotation_euler.copy()
+    label = bpy.data.objects.new("FaceLabel", bpy.data.curves.new("FaceLabel", "FONT"))
+    label.data.size = 0.026
+    label.data.align_x = "CENTER"
+    label.data.materials.append(mat("outline"))
+    scene.collection.objects.link(label)
+    bm = bmesh.new()                       # 標籤底板
+    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5)
+    bmesh.ops.scale(bm, vec=(1.0, 0.09, 1.0), verts=bm.verts)
+    plate = make_object("FacePlate", bm, ["eye_white"], smooth=False)
+    COLL.objects.unlink(plate)
+    scene.collection.objects.link(plate)
+    plate.parent = None
+    rows = []
+    for rz in (-30, -90):
+        inst.rotation_euler = (0, 0, math.radians(rz))
+        head = Matrix.Rotation(math.radians(rz), 3, "Z") @ Vector((0, EYE_C[1] - 0.015, EYE_C[2] + 0.008))
+        cm = cam.rotation_euler.to_matrix()
+        cam.location = head + cm @ Vector((0, 0, 6.0))
+        label.location = head + cm @ Vector((0, -0.222, 1.0))
+        label.rotation_euler = plate.rotation_euler = cam.rotation_euler
+        plate.location = head + cm @ Vector((0, -0.228, 0.9))
+        row = []
+        for k in [None] + FACE_KEYS:
+            set_expression(arm, {k: 1.0} if k else {})
+            label.data.body = k or "Neutral"
+            render(scene, cam, tmp, cell, cell)
+            img = bpy.data.images.load(tmp)
+            a = np.empty(cell * cell * 4, dtype=np.float32)
+            img.pixels.foreach_get(a)
+            bpy.data.images.remove(img)
+            row.append(a.reshape(cell, cell, 4))
+        rows.append(np.concatenate(row, axis=1))
+    sheet = np.concatenate(rows[::-1], axis=0)
+    h, w = sheet.shape[:2]
+    res = bpy.data.images.new("face_sheet", w, h)
+    res.pixels.foreach_set(sheet.ravel())
+    res.filepath_raw = path
+    res.file_format = "PNG"
+    res.save()
+    os.remove(tmp)
+    bpy.data.objects.remove(label)
+    bpy.data.objects.remove(plate)
+    bpy.data.objects.remove(cam)
+    inst.rotation_euler = rot0
+    set_expression(arm, {})
+
+#endregion
+
 #region 預覽
 
 
@@ -990,6 +1323,7 @@ def skin_character(arm, parts):
         "Shoes": lambda co: side(co, "Foot"), "Bag": lambda co: {"Bag": 1.0},
         "Scarf": lambda co: {"Neck": 0.5 * smoothstep(0.66, 0.73, co.z), "Chest": 1.0 - 0.5 * smoothstep(0.66, 0.73, co.z)},
     }
+    rules.update(face_bind_rules(arm))
     for name, rule in rules.items():
         rigid_bind(by_name[name], arm, rule)
 
@@ -1131,6 +1465,36 @@ ANIMS = {
     ]),
 }
 
+# 表情：(格, {shape key: 值})；沒寫到的 key 沿用上一格的值（第一格之前是 0），每一格都 key 全部表情
+EXPRESSIONS = {
+    # 冷面撇嘴，偶爾眨一下眼
+    "Idle": [(0, {"Mouth_Smirk": 0.5}), (17, {}), (19, {"Blink_L": 1.0, "Blink_R": 1.0}),
+             (22, {"Blink_L": 0.0, "Blink_R": 0.0}), (34, {}), (36, {"Brow_Up": 0.35}), (42, {"Brow_Up": 0.0}),
+             (48, {})],
+    "Run": [(0, {"Brow_Angry": 0.3, "Squint": 0.25, "Mouth_Frown": 0.3}), (20, {})],
+    "Jump": [(0, {"Blink_L": 1.0, "Blink_R": 1.0, "Brow_Angry": 0.4, "Mouth_Frown": 0.5}), (16, {})],
+    "Melee": [(0, {"Brow_Angry": 0.5}), (3, {"Brow_Angry": 1.0, "Squint": 0.5, "Mouth_Frown": 0.6}),
+              (6, {"Squint": 0.2, "Mouth_Open": 0.9, "Mouth_Frown": 0.2}), (9, {}),
+              (16, {"Brow_Angry": 0.3, "Squint": 0.0, "Mouth_Open": 0.0, "Mouth_Frown": 0.0})],
+    "Shoot": [(0, {"Squint": 0.3}), (3, {"Squint": 0.9, "Brow_Angry": 0.3, "Mouth_Smirk": 0.4}),
+              (5, {"Squint": 0.5, "Brow_Angry": 0.0, "Brow_Up": 0.3, "Mouth_Smirk": 0.7}),
+              (12, {"Squint": 0.1, "Brow_Up": 0.0, "Mouth_Smirk": 0.5})],
+    "Hurt": [(0, {}), (3, {"Brow_Sad": 1.0, "Mouth_Open": 0.9, "Squint": 1.0, "Mouth_Frown": 0.5}),
+             (9, {"Brow_Sad": 0.8, "Mouth_Open": 0.45, "Squint": 0.8})],
+}
+
+# 二次動畫（overlapping action）：耳朵、尾巴、包包的末端像有慣性的質點，追著原本動作的位置跑，
+# 落後與回彈的量換算成骨頭的額外旋轉。骨名: (跟隨強度, 速度保留, 最大偏角 度)；越往末端越軟。
+OVERLAP = {
+    "Tail1": (0.30, 0.55, 18), "Tail2": (0.24, 0.60, 18), "Tail3": (0.18, 0.65, 20),
+    "LeftEar": (0.26, 0.62, 28), "RightEar": (0.26, 0.62, 28), "Bag": (0.22, 0.62, 30),
+}
+# 甩一下：(格, 骨名, 把末端甩開的角度 (x, y, z) 度)，之後由上面的彈簧自己回彈。Idle 抖耳朵；Hurt 被打到時包包與尾巴被震開
+KICKS = {
+    "Idle": [(34, "LeftEar", (-35, 0, -12)), (37, "LeftEar", (20, 0, 8))],
+    "Hurt": [(1, "Bag", (-40, 0, 15)), (1, "Tail1", (25, 0, 0)), (1, "Tail3", (30, 0, 0))],
+}
+
 
 def _fcurves(action, slot):
     try:
@@ -1141,8 +1505,57 @@ def _fcurves(action, slot):
         return action.fcurves
 
 
+def apply_overlap(arm, name, first, last, loop):
+    """在目前的 Action 上疊二次動畫：逐格取原本動作的姿勢，模擬 OVERLAP 各骨頭末端的彈簧，結果逐格 key 回去。
+    循環動作連跑 3 圈取最後一圈（進入穩定的週期），最後一格＝第一格，接縫不跳。"""
+    scene = bpy.context.scene
+    bones = [b for b in OVERLAP if b in arm.pose.bones]
+    missing = [b for b in OVERLAP if b not in arm.pose.bones]
+    if missing:
+        print(f"警告：{name} 的二次動畫略過不存在的骨頭 {missing}")
+    frames = list(range(first, last if loop else last + 1))
+    posed = {}
+    for f in frames:
+        scene.frame_set(f)
+        posed[f] = {b: (arm.pose.bones[b].head.copy(), arm.pose.bones[b].tail.copy(),
+                        arm.pose.bones[b].matrix.to_3x3().normalized(), arm.pose.bones[b].rotation_euler.copy())
+                    for b in bones}
+    kicks = KICKS.get(name, [])
+    for b in bones:
+        k, keep, limit = OVERLAP[b]
+        p, v, out = None, Vector(), {}
+        for f in frames * (3 if loop else 1):
+            head, tail, m, eul = posed[f][b]
+            if p is None:
+                p = tail.copy()
+            for tf, tb, kick in kicks:
+                if tf == f and tb == b:
+                    rel = m.transposed() @ (p - head)
+                    p = head + m @ (rot_xyz(*kick) @ rel)
+            v = v * keep + (tail - p) * k
+            p = p + v
+            q = (m.transposed() @ (tail - head)).rotation_difference(m.transposed() @ (p - head))
+            if q.angle > 1e-6:                     # 軟上限：接近最大偏角時越來越難再轉
+                q = Quaternion(q.axis, math.radians(limit) * math.tanh(q.angle / math.radians(limit)))
+            out[f] = (eul.to_quaternion() @ q).to_euler("XYZ", eul)
+        pb = arm.pose.bones[b]
+        for f in frames + ([last] if loop else []):
+            pb.rotation_euler = out[first if f == last and loop else f]
+            pb.keyframe_insert("rotation_euler", frame=f, group=b)
+    scene.frame_set(0)
+
+
+def _finish_curves(act, slot, name, loop):
+    for fc in _fcurves(act, slot):
+        for kp in fc.keyframe_points:
+            kp.interpolation = "LINEAR" if name == "Jump" else "BEZIER"
+        if loop and not fc.modifiers:
+            fc.modifiers.new("CYCLES")
+
+
 def build_actions(arm):
-    """依 ANIMS 建 Action（掛 fake user，FBX 匯出時全部帶出去）。回傳 {名稱: (action, 最後一格)}。"""
+    """依 ANIMS 建 Action（掛 fake user，FBX 匯出時全部帶出去）。回傳 {名稱: (action, 最後一格)}。
+    表情（EXPRESSIONS）key 在骨架物件的自訂屬性上，二次動畫（OVERLAP）最後疊上去。"""
     arm.animation_data_create()
     result = {}
     for name, (loop, keys) in ANIMS.items():
@@ -1158,16 +1571,22 @@ def build_actions(arm):
                 pb.keyframe_insert("rotation_euler", frame=frame, group=pb.name)
             arm.pose.bones["Hips"].location = k.get("@Hips", (0, 0, 0))
             arm.pose.bones["Hips"].keyframe_insert("location", frame=frame, group="Hips")
+        # 表情同理：每個動作都 key 全部表情
+        state = {}
+        for frame, vals in EXPRESSIONS.get(name, [(keys[0][0], {})]):
+            state.update(vals)
+            set_expression(arm, state)
+            for kname in FACE_KEYS:
+                arm.keyframe_insert(f'["{kname}"]', frame=frame, group="Face")
         slot = arm.animation_data.action_slot if hasattr(arm.animation_data, "action_slot") else None
-        for fc in _fcurves(act, slot):
-            for kp in fc.keyframe_points:
-                kp.interpolation = "LINEAR" if name == "Jump" else "BEZIER"
-            if loop:
-                fc.modifiers.new("CYCLES")
+        _finish_curves(act, slot, name, False)
+        apply_overlap(arm, name, keys[0][0], keys[-1][0], loop)
+        _finish_curves(act, slot, name, loop)
         act.frame_range = (keys[0][0], keys[-1][0])
         result[name] = (act, keys[-1][0])
         set_pose(arm, {})
     arm.animation_data.action = result["Idle"][0]
+    set_expression(arm, {})
     return result
 
 
@@ -1257,6 +1676,7 @@ def main():
     parts = [build_body(), build_shell()]
     parts += [o for o in COLL.objects if o.name == "ShellFill"]
     parts += build_head_parts() + build_hands_shoes() + build_bag()
+    parts += build_face(parts[0])
 
     lines, total = [], 0
     for o in parts:
@@ -1271,6 +1691,7 @@ def main():
 
     arm = build_armature()
     mesh = skin_character(arm, parts)
+    add_expression_drivers(arm, mesh)
     print("骨頭：" + ", ".join(b.name for b in arm.data.bones))
     print("頂點群組：" + ", ".join(g.name for g in mesh.vertex_groups))
 
@@ -1316,6 +1737,7 @@ def main():
     set_pose(arm, TEST_POSE)
     render(scene, cam2, os.path.join(out, "AhJia3D_pose_hero.png"), 1200, 1200)
     set_pose(arm, {})
+    render_face_sheet(scene, insts[1], arm, os.path.join(out, "AhJia3D_faces.png"))
 
     # 線框：加 Wireframe（保留原網格），描邊先關
     sol.show_render = False
