@@ -14,11 +14,12 @@ namespace Sidescroller
     ///   - Animator 用 scaled time（暫停時停住）；不循環的動作播完由 Animator 停在最後一格，播完與否用自己的計時判斷
     ///     （Animator.Play 下一次更新才生效，當下查 state 會拿到上一個動作）。
     ///   - 目前只有日班制服的模型：特急制服也用同一隻（換裝時照樣閃一下）。
+    ///   - 不碰 blend shape（表情）：模型有沒有表情 shape key 都照常運作（Meshy 版沒有）。
     /// </summary>
     public sealed class HeroVisual : MonoBehaviour
     {
-        /// <summary>模型高約 1.1，放大到和 sprite 主角差不多高（1.5 單位）。</summary>
-        private const float ModelScale = 1.3f;
+        /// <summary>Meshy 版模型帽頂高約 1.04、身形比程式化版瘦，放大 1.5 倍讓遊戲畫面裡的體積接近原本的主角（只放大外觀，碰撞不變）。</summary>
+        private const float ModelScale = 1.5f;
         private const float TurnYaw = 70f;
         private const float CrossFade = 0.06f;
         private static readonly int TintId = Shader.PropertyToID("_Tint");

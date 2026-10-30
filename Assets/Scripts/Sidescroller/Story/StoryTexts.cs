@@ -8,6 +8,8 @@ namespace Sidescroller
         public const string MenuHint = "↑↓：選擇　Enter：確定";
         public const string MenuHintTouch = "點一下遊戲名稱開始";
         public const string MenuErrorPrefix = "啟動失敗：";
+        /// <summary>主角 3D 模型的授權標註（Meshy 免費版 CC BY 4.0 要求署名），選單右下角小字。</summary>
+        public const string MenuModelCredit = "主角模型：Meshy（CC BY 4.0）";
 
         public const string DialogueNext = "▼";
         public const string DialogueHelp = "Space／Enter：繼續　Esc：暫停";
@@ -121,7 +123,7 @@ namespace Sidescroller
         /// <summary>全部固定文字（含觸控版關卡提示），給 Editor 檢查工具檢查缺字（KeyboardHints 是關卡資料原文，由關卡檢查涵蓋）。</summary>
         public static readonly string[] All = Concat(new[]
         {
-            GameTitle, MenuTitle, MenuHint, MenuHintTouch, MenuErrorPrefix,
+            GameTitle, MenuTitle, MenuHint, MenuHintTouch, MenuErrorPrefix, MenuModelCredit,
             DialogueNext, DialogueHelp, DialogueHelpTouch,
             PauseTitle, PauseResume, PauseSkip, PauseRespawn, PauseQuit,
             ClearTitle, ClearTimePrefix, ClearRestart, ClearQuit,

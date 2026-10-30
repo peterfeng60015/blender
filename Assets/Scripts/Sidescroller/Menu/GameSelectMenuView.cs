@@ -7,6 +7,7 @@ namespace Sidescroller
     /// 選擇遊戲選單的畫面與輸入（<see cref="GameSelectMenu"/> 建立）。建在目前的 active 場景（<c>GameSelect</c>）：
     /// 黑底相機＋Overlay Canvas。出現的那一幀不處理輸入（<see cref="MenuList"/>），用 unscaled time。
     /// 選項可以用滑鼠或手指直接點；操作提示依輸入裝置切換；直向時蓋直向提示。
+    /// 右下角（安全區內）一行主角模型的授權標註。
     /// </summary>
     public sealed class GameSelectMenuView : MonoBehaviour
     {
@@ -16,6 +17,7 @@ namespace Sidescroller
         private MenuList _list;
         private TextMeshProUGUI _error;
         private TextMeshProUGUI _hint;
+        private RectTransform _safe;
         private RotateHintView _rotate;
         private bool _chosen;
 
@@ -79,11 +81,22 @@ namespace Sidescroller
             _error = SsUiKit.AddText(error, font, 32f, SsUiKit.Danger);
             _error.gameObject.SetActive(false);
 
+            // 授權標註：右下角、不換行；放在安全區裡，避開圓角與 Home 指示條（在操作提示下方，不會疊到）
+            _safe = SsUiKit.Fill("SafeArea", root);
+            SsUiKit.FitSafeArea(_safe);
+            var credit = SsUiKit.Rect("Credit", _safe, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f));
+            credit.anchoredPosition = new Vector2(-24f, 16f);
+            credit.sizeDelta = new Vector2(700f, 36f);
+            var c = SsUiKit.AddText(credit, font, 24f, new Color(1f, 1f, 1f, 0.45f), TextAlignmentOptions.BottomRight);
+            c.textWrappingMode = TextWrappingModes.NoWrap;
+            c.text = StoryTexts.MenuModelCredit;
+
             _rotate = new RotateHintView(root, font, null);
         }
 
         private void Update()
         {
+            SsUiKit.FitSafeArea(_safe);
             if (_chosen || _list == null)
                 return;
             var hint = SsInput.TouchActive ? StoryTexts.MenuHintTouch : StoryTexts.MenuHint;

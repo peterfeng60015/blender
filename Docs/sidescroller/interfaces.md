@@ -700,6 +700,10 @@ public static void Run()
 - **顯示**：`HeroVisual`（`Actors/`）包住兩種外觀，`HeroController` 只呼叫它。3D 時模型面向右轉 yaw −70°、面向左 +70°（比正側面多轉向鏡頭一點），放大 1.3 倍；受擊閃色改 `_Tint`、無敵閃爍改成整隻隱藏顯示；動作播完與否用自己的計時判斷。目前只有日班制服的模型，特急制服也用同一隻。
 - **出包**：Entry（AOT）多了方法、`link.xml` 多保留 AnimationModule 與 SkinnedMeshRenderer，**WebGL／Android 要整包重出**才會有 3D 主角；舊版 App 只更新代碼包時會自動退回 sprite 主角。
 - **驗證**：`Hero3DPlayCapture.RunBatch`（batchmode，見檔頭）從 Entry 進 Play、叫主角播各動作並拍遊戲相機。
+- **Meshy 版（2026-10-30）**：主角改用 Meshy AI 生成的模型，由 `hero3d.py --source meshy --glb <路徑>` 接上同一副 28 根骨架與 6 個動作，輸出檔名、`AhJia_Mesh`、`M_AhJia`、UV1 描邊法線、頂點色 A 描邊粗細、帽頂高度（1.041 m）都和程式化版相同（Meshy 版耳朵較短，含耳總高比程式化版的 1.122 m 矮），所以放進專案與重跑 Setup 的流程不變。Meshy 版身形比程式化版瘦，`HeroVisual.ModelScale` 從 1.3 改成 1.5，遊戲畫面裡的體積才接近原本的主角（只放大外觀，碰撞不變）。
+  - **沒有表情**：模型沒有 blend shape，動作裡也沒有 shape key 曲線；遊戲程式本來就不呼叫 `SetBlendShapeWeight`，演出的 `face` 指令是轉向，不受影響。
+  - Setup 的容錯：FBX 材質不叫 `M_AhJia` 時一律對應到 `M_AhJiaToon`（第一次對應時印警告）；少了某個動作時印警告、該狀態改播 Idle（控制器永遠 6 個狀態，`HeroVisual` 切換不會找不到狀態，`Duration` 回 0、演出不會卡）；沒有 Idle 才中止。匯入後在 Console 印三角形、骨頭、blend shape 數。
+  - **授權標註**：Meshy 免費版是 CC BY 4.0，遊戲選擇選單右下角（安全區內）有一行小字 `StoryTexts.MenuModelCredit`「主角模型：Meshy（CC BY 4.0）」，字已在思源黑體字集內（`CutsceneChecker` 會一起檢查）。
 
 ## 8. HybridCLR 與 AOT 泛型（各角色寫程式時遵守，新用到的列進交接檔）
 

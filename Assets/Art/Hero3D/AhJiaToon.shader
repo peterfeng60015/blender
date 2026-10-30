@@ -7,6 +7,8 @@
 //             B＝材質類別（0 皮膚、0.33 殼、0.66 布、1 金屬／眼睛），選陰影色用。_UseMask＝0 時不讀。
 //   頂點色    RGB＝材質固有色（sRGB，後備）、A＝描邊粗細倍率。
 //   TEXCOORD1 描邊用的平滑法線（切線空間 xy，z 重建）；全 0 時退回頂點法線。
+// 貼圖本身已畫有明暗（Meshy 生成的 albedo 自帶 AO 與筆觸）時把 _RampStrength 調低，色階明暗只疊一部分，
+// 臉上不會碎成一塊塊陰影；1＝原本的完整色階。
 // 不用任何 keyword（每個 pass 只有一個變體），開關都是 0／1 的數值。
 Shader "Sidescroller/AhJiaToon"
 {
@@ -23,6 +25,7 @@ Shader "Sidescroller/AhJiaToon"
         _Step1 ("Shadow Step", Range(0, 1)) = 0.38
         _Step2 ("Light Step", Range(0, 1)) = 0.62
         _MidMix ("Mid Band (0 Shadow, 1 Lit)", Range(0, 1)) = 0.55
+        _RampStrength ("Ramp Strength (Lower for Painted Albedo)", Range(0, 1)) = 1
         _ShadowOffset ("Mask G Shadow Offset", Range(0, 1)) = 0.3
         _ShadowColor ("Shadow (No Mask)", Color) = (0.58, 0.52, 0.6, 1)
         _ShadowSkin ("Shadow Skin", Color) = (0.78, 0.55, 0.6, 1)
@@ -62,6 +65,7 @@ Shader "Sidescroller/AhJiaToon"
             half _Step1;
             half _Step2;
             half _MidMix;
+            half _RampStrength;
             half _ShadowOffset;
             half4 _ShadowColor;
             half4 _ShadowSkin;
@@ -155,6 +159,7 @@ Shader "Sidescroller/AhJiaToon"
                 half3 mid = lerp(shadow, half3(1.0h, 1.0h, 1.0h), _MidMix);
                 half3 ramp = lerp(shadow, mid, HardStep(_Step1, ndl));
                 ramp = lerp(ramp, half3(1.0h, 1.0h, 1.0h), HardStep(_Step2, ndl));
+                ramp = lerp(half3(1.0h, 1.0h, 1.0h), ramp, _RampStrength);
                 half3 color = albedo * ramp;
 
                 // rim light：輪廓邊緣（法線與視線垂直）且朝 _RimDir 那側的一道亮邊

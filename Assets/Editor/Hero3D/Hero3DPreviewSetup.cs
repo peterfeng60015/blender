@@ -7,12 +7,16 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 
 /// <summary>
-/// 阿甲 3D（Tools/Blender/Hero3D/hero3d.py 匯出的 AhJia3D.fbx，放進專案時改名 SsHero3D.fbx）在 Unity 的設定，可重複執行：
-///   1. 材質 M_AhJiaToon（shader Sidescroller/AhJiaToon：貼圖或頂點色＋硬色階明暗＋rim＋高光＋描邊），並把 FBX 內的 M_AhJia 對應過去。
+/// 阿甲 3D（Tools/Blender/Hero3D/hero3d.py 匯出的 AhJia3D.fbx，放進專案時改名 SsHero3D.fbx）在 Unity 的設定，可重複執行。
+/// 程式化建模版與 Meshy 版（--source meshy）都適用：兩者檔名、物件名、材質名、UV1 描邊法線、6 個動作名稱相同；
+/// Meshy 版沒有 blend shape（表情），這裡和遊戲端都不依賴 blend shape，有沒有都照常運作。
+///   1. 材質 M_AhJiaToon（shader Sidescroller/AhJiaToon：貼圖或頂點色＋硬色階明暗＋rim＋高光＋描邊），並把 FBX 內的材質
+///      （約定叫 M_AhJia；叫別的名字也一律對應過去）都換成它。
 ///      模型旁有 SsHero3D_BaseMap.png／SsHero3D_MaskMap.png 時設好匯入格式並接上材質，沒有就用頂點色。
 ///   2. FBX 匯入設定：Generic 骨架、套用軸向轉換、切線用 MikkTSpace、UV1 保留給描邊法線、
-///      動畫片段改成短名（Idle、Run…）、Idle／Run／Jump 循環。
+///      動畫片段改成短名（Idle、Run…）、Idle／Run／Jump 循環。匯入後在 Console 印出網格摘要（三角形、骨頭、blend shape 數）。
 ///   3. 遊戲用動畫控制器 SsHero3D_Anim：6 個狀態、沒有轉換，由 HeroVisual 用程式切換（和模型一起進資源包）。
+///      FBX 少了某個動作時印警告、該狀態改播 Idle（控制器永遠有 6 個狀態，遊戲端切換不會找不到狀態）；連 Idle 都沒有才中止。
 ///   4. 預覽用動畫控制器 AhJiaPreview：依序輪播 6 個動作。
 ///   5. 預覽場景 Hero3DPreview：3/4 視角與側面（遊戲視角）各一隻，按 Play 就會動（不進 Build Settings、不進資源包）。
 /// 模型、控制器、場景裡都沒有任何遊戲模組（Assembly-CSharp）的元件。
@@ -48,7 +52,10 @@ public static class Hero3DPreviewSetup
         Debug.Log(LogPrefix + $"完成：已開啟 {ScenePath}，按 Play 播放動作");
     }
 
-    public static void Setup()
+    public static void Setup() => SetupAndLoadClips();
+
+    /// <summary>Setup 本體；回傳 6 個動作的片段給 Capture 用（不再讀一次，缺動作的警告只印一次）。</summary>
+    private static Dictionary<string, AnimationClip> SetupAndLoadClips()
     {
         var material = SetupMaterial();
         SetupModelImporter(material);
@@ -56,6 +63,7 @@ public static class Hero3DPreviewSetup
         SetupGameController(clips);
         var controller = SetupController(clips);
         BuildScene(controller);
+        return clips;
     }
 
     /// <summary>
@@ -66,10 +74,10 @@ public static class Hero3DPreviewSetup
     {
         try
         {
-            Setup();
+            var clips = SetupAndLoadClips();
             var args = Environment.GetCommandLineArgs();
             var i = Array.IndexOf(args, "-capturePath");
-            Capture(i >= 0 && i + 1 < args.Length ? args[i + 1] : "Temp/Hero3DPreview.png");
+            Capture(i >= 0 && i + 1 < args.Length ? args[i + 1] : "Temp/Hero3DPreview.png", clips);
         }
         catch (Exception e)
         {
@@ -82,10 +90,9 @@ public static class Hero3DPreviewSetup
     /// 每個動作一列、取 5 格（用 AnimationClip.SampleAnimation，不必進 Play）。
     /// batchmode 手動 Camera.Render 時蒙皮不會跟著取樣即時更新，所以每格先 BakeMesh 成靜態網格再拍。
     /// </summary>
-    private static void Capture(string path)
+    private static void Capture(string path, Dictionary<string, AnimationClip> clips)
     {
         const int Cell = 360, Cols = 5;
-        var clips = LoadClips();
         var cam = Camera.main;
         var actors = new[] { GameObject.Find("AhJia_ThreeQuarter"), GameObject.Find("AhJia_Side") };
         var skins = actors.Select(a => a.GetComponentInChildren<SkinnedMeshRenderer>()).ToArray();
@@ -106,7 +113,7 @@ public static class Hero3DPreviewSetup
         for (var r = 0; r < Sequence.Length; r++)
         {
             var clip = clips[Sequence[r].Name];
-            Debug.Log(LogPrefix + $"{clip.name}：{clip.length:0.00} 秒、{clip.frameRate} fps、{AnimationUtility.GetCurveBindings(clip).Length} 條曲線、loop={clip.isLooping}");
+            Debug.Log(LogPrefix + $"{Sequence[r].Name}（{clip.name}）：{clip.length:0.00} 秒、{clip.frameRate} fps、{AnimationUtility.GetCurveBindings(clip).Length} 條曲線、loop={clip.isLooping}");
             for (var c = 0; c < Cols; c++)
             {
                 var t = clip.length * c / (LoopingClips.Contains(clip.name) ? Cols : Cols - 1);
@@ -199,28 +206,82 @@ public static class Hero3DPreviewSetup
         importer.generateSecondaryUV = false;
         importer.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), "M_AhJia"), material);
 
-        // FBX 裡的片段名稱是「AhJia_Rig|AhJia_Idle」，取最後一個 '_' 之後當短名
         var clips = new List<ModelImporterClipAnimation>();
         foreach (var clip in importer.defaultClipAnimations)
         {
-            var shortName = clip.name.Substring(clip.name.LastIndexOf('_') + 1);
+            var shortName = ShortClipName(clip.name);
             clip.name = shortName;
             clip.loopTime = LoopingClips.Contains(shortName);
             clips.Add(clip);
         }
         importer.clipAnimations = clips.ToArray();
         importer.SaveAndReimport();
+
+        // 名字不是 M_AhJia 的材質（約定外，例如直接從 glb 帶出來的）匯入後會留在 FBX 裡：同樣對應到 M_AhJiaToon 再匯入一次。
+        // 對應過的就不再是子資產，所以只有第一次會印警告
+        var stray = AssetDatabase.LoadAllAssetsAtPath(ModelPath).OfType<Material>().Select(m => m.name).Distinct().ToArray();
+        if (stray.Length > 0)
+        {
+            Debug.LogWarning(LogPrefix + $"FBX 材質名稱不是 M_AhJia：{string.Join(", ", stray)}，一併對應到 {MaterialPath}");
+            foreach (var name in stray)
+                importer.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), name), material);
+            importer.SaveAndReimport();
+        }
+        LogModelSummary();
     }
 
+    /// <summary>
+    /// FBX 裡的片段名稱是「AhJia_Rig|AhJia_Idle」：先取最後一個 '|' 之後，再認 6 個動作名稱的結尾；
+    /// 都不像就取最後一個 '_' 之後（和舊版相同）。
+    /// </summary>
+    private static string ShortClipName(string name)
+    {
+        var take = name.Substring(name.LastIndexOf('|') + 1);
+        foreach (var (action, _) in Sequence)
+        {
+            if (take == action || take.EndsWith("_" + action, StringComparison.Ordinal))
+                return action;
+        }
+        return take.Substring(take.LastIndexOf('_') + 1);
+    }
+
+    /// <summary>匯入結果摘要（方便和約定的預算對照）；blend shape 為 0 是正常的（Meshy 版沒有表情）。</summary>
+    private static void LogModelSummary()
+    {
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
+        foreach (var skin in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            var mesh = skin.sharedMesh;
+            var mats = string.Join(", ", skin.sharedMaterials.Select(m => m != null ? m.name : "（空）"));
+            var indices = 0L;
+            for (var i = 0; mesh != null && i < mesh.subMeshCount; i++)
+                indices += mesh.GetIndexCount(i);
+            Debug.Log(LogPrefix + $"{skin.name}：{indices / 3} 三角形、{skin.bones.Length} 根骨頭、" +
+                      $"{(mesh != null ? mesh.blendShapeCount : 0)} 個 blend shape、材質 {mats}");
+        }
+    }
+
+    /// <summary>
+    /// 6 個動作名稱 → 片段。FBX 少了某個動作時印警告、改用 Idle（控制器照樣有 6 個狀態）；沒有 Idle 就中止。
+    /// </summary>
     private static Dictionary<string, AnimationClip> LoadClips()
     {
-        var clips = AssetDatabase.LoadAllAssetsAtPath(ModelPath).OfType<AnimationClip>()
+        var found = AssetDatabase.LoadAllAssetsAtPath(ModelPath).OfType<AnimationClip>()
             .Where(c => !c.name.StartsWith("__preview__", StringComparison.Ordinal))
-            .ToDictionary(c => c.name);
+            .GroupBy(c => c.name)
+            .ToDictionary(g => g.Key, g => g.First());
+        if (!found.TryGetValue("Idle", out var idle))
+            throw new Exception(LogPrefix + $"FBX 裡沒有動畫片段 Idle（現有：{string.Join(", ", found.Keys)}）");
+        var clips = new Dictionary<string, AnimationClip>();
         foreach (var (name, _) in Sequence)
         {
-            if (!clips.ContainsKey(name))
-                throw new Exception(LogPrefix + $"FBX 裡沒有動畫片段 {name}（現有：{string.Join(", ", clips.Keys)}）");
+            if (found.TryGetValue(name, out var clip))
+            {
+                clips[name] = clip;
+                continue;
+            }
+            Debug.LogWarning(LogPrefix + $"FBX 裡沒有動畫片段 {name}，狀態 {name} 改播 Idle（現有：{string.Join(", ", found.Keys)}）");
+            clips[name] = idle;
         }
         return clips;
     }

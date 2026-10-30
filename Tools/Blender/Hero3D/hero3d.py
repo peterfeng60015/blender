@@ -2,6 +2,11 @@
 
 用法（在專案根目錄）：
   blender -b --python Tools/Blender/Hero3D/hero3d.py -- --out <輸出資料夾>
+  blender -b --python Tools/Blender/Hero3D/hero3d.py -- --source meshy [--glb <glb>] --out <輸出資料夾>
+    改用 Meshy AI 生成的模型（見「Meshy 來源」）：輸出檔名相同，沒有表情（沒有 faces 圖、FBX 沒有 blend shape），
+    另外多 AhJia3D_weights(_raw).png（權重）、AhJia3D_actions_front／back.png（3/4 前後的動作總覽）、
+    AhJia3D_game_scale.png（160px 遊戲尺寸）。--glb 預設是 Tools/Blender/Hero3D/meshy/AhJia_Meshy.glb；
+    貼圖交給同資料夾的 meshy_texture.py，沒有時用暫代版。
 輸出：
   AhJia3D.blend            模型＋骨架（面朝 -Y、Z 朝上、腳底在原點，單位公尺），全部配件合併成一個蒙皮網格
   AhJia3D_turnaround.png   正面／3/4／側面／背面（靜止姿勢）
@@ -1248,7 +1253,13 @@ def select_only(objs, active):
     vl.objects.active = active
 
 
-def build_armature():
+def align_bone_roll(eb):
+    """roll：讓每根骨頭的局部 X 都是世界的左右方向，擺姿勢時「繞 X 轉」一律是前後擺。"""
+    d = (eb.tail - eb.head).normalized()
+    eb.align_roll(Vector((0, 0, 1)) if abs(d.y) > 0.7 else Vector((0, -1, 0)))
+
+
+def build_armature(bones=BONES):
     arm_data = bpy.data.armatures.new("AhJia_Rig")
     arm = bpy.data.objects.new("AhJia_Rig", arm_data)
     COLL.objects.link(arm)
@@ -1257,12 +1268,10 @@ def build_armature():
     select_only([arm], arm)
     bpy.ops.object.mode_set(mode="EDIT")
     ebs = {}
-    for name, head, tail, parent in BONES:
+    for name, head, tail, parent in bones:
         eb = arm_data.edit_bones.new(name)
         eb.head, eb.tail = head, tail
-        # roll：讓每根骨頭的局部 X 都是世界的左右方向，擺姿勢時「繞 X 轉」一律是前後擺
-        d = (Vector(tail) - Vector(head)).normalized()
-        eb.align_roll(Vector((0, 0, 1)) if abs(d.y) > 0.7 else Vector((0, -1, 0)))
+        align_bone_roll(eb)
         if parent:
             eb.parent = ebs[parent]
             eb.use_connect = (ebs[parent].tail - Vector(head)).length < 1e-4
@@ -1554,9 +1563,9 @@ def _finish_curves(act, slot, name, loop):
             fc.modifiers.new("CYCLES")
 
 
-def build_actions(arm):
+def build_actions(arm, face=True):
     """依 ANIMS 建 Action（掛 fake user，FBX 匯出時全部帶出去）。回傳 {名稱: (action, 最後一格)}。
-    表情（EXPRESSIONS）key 在骨架物件的自訂屬性上，二次動畫（OVERLAP）最後疊上去。"""
+    表情（EXPRESSIONS）key 在骨架物件的自訂屬性上（face=False 時不 key，給沒有表情的模型），二次動畫（OVERLAP）最後疊上去。"""
     arm.animation_data_create()
     result = {}
     for name, (loop, keys) in ANIMS.items():
@@ -1574,7 +1583,7 @@ def build_actions(arm):
             arm.pose.bones["Hips"].keyframe_insert("location", frame=frame, group="Hips")
         # 表情同理：每個動作都 key 全部表情
         state = {}
-        for frame, vals in EXPRESSIONS.get(name, [(keys[0][0], {})]):
+        for frame, vals in EXPRESSIONS.get(name, [(keys[0][0], {})]) if face else []:
             state.update(vals)
             set_expression(arm, state)
             for kname in FACE_KEYS:
@@ -1587,7 +1596,8 @@ def build_actions(arm):
         result[name] = (act, keys[-1][0])
         set_pose(arm, {})
     arm.animation_data.action = result["Idle"][0]
-    set_expression(arm, {})
+    if face:
+        set_expression(arm, {})
     return result
 
 
@@ -2380,11 +2390,805 @@ def bake_outline_normals(mesh):
 
 #endregion
 
+#region Meshy 來源
+
+# --source meshy：改用 Meshy AI 生成的模型（glb：單一網格＋Base Color、金屬／粗糙、法線三張貼圖），
+# 接上同一套骨架（BONES 的名稱與階層）與 6 個動作。流程：匯入 → 焊接 → 正規化 → 減面（保留 Meshy UV）
+# → 依 Meshy 原姿勢擺骨頭 → 熱擴散權重 → 拆開郵差包 → 部位規則 → 四肢擺回左右對稱、套成新的靜止姿勢 → 貼圖。
+# 臉畫在貼圖上，沒有表情 shape key；動作也不 key 表情。
+
+MESHY_GLB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meshy", "AhJia_Meshy.glb")   # --glb 的預設值（Git LFS）
+MESHY_CAP_TOP = 1.041   # 現版程式化模型的帽頂高度（公尺，不含耳朵）；Meshy 模型的最高點是帽頂，等比縮放到這個高度
+MESHY_TRIS = 20000      # 減面上限（三角形）
+MESHY_FILL_TRIS = 300   # 其中留給拆開郵差包後補開口的三角形
+MESHY_FILL_UV = 0.001   # 補片 UV 的寬度（貼圖寬的比例，2048 貼圖約 2 texel）
+
+# 骨頭在 Meshy 原姿勢上的位置，單位是帽頂高（×MESHY_CAP_TOP 換成公尺）；名稱、父骨照 BONES。
+# Meshy 原姿勢左手往後、右手往前擺，右腳在前，耳朵一前一後；長嘴往下斜、嘴尖略偏右，尾巴往右後方甩。
+MESHY_BONES = {
+    "Hips": ((0, 0.02, 0.33), (0, 0.02, 0.45)),
+    "Spine": ((0, 0.02, 0.45), (0, 0.0, 0.58)),
+    "Chest": ((0, 0.0, 0.58), (0, -0.02, 0.70)),
+    "Neck": ((0, -0.02, 0.70), (0, -0.03, 0.78)),
+    "Head": ((0, -0.03, 0.78), (0, -0.03, 0.97)),
+    "Snout": ((-0.015, -0.07, 0.83), (-0.042, -0.19, 0.75)),
+    "Tail1": ((0, 0.06, 0.32), (-0.04, 0.13, 0.27)),
+    "Tail2": ((-0.04, 0.13, 0.27), (-0.09, 0.175, 0.24)),
+    "Tail3": ((-0.09, 0.175, 0.24), (-0.135, 0.228, 0.218)),
+    "Bag": ((0.095, -0.15, 0.54), (0.095, -0.16, 0.38)),
+    "LeftUpperLeg": ((0.065, 0.02, 0.33), (0.06, 0.05, 0.20)),
+    "LeftLowerLeg": ((0.06, 0.05, 0.20), (0.075, 0.065, 0.09)),
+    "LeftFoot": ((0.075, 0.065, 0.09), (0.10, -0.04, 0.03)),
+    "LeftShoulder": ((0.04, -0.01, 0.65), (0.13, 0.0, 0.65)),
+    "LeftUpperArm": ((0.13, 0.0, 0.65), (0.195, 0.07, 0.50)),
+    "LeftLowerArm": ((0.195, 0.07, 0.50), (0.245, 0.13, 0.415)),
+    "LeftHand": ((0.245, 0.13, 0.415), (0.275, 0.19, 0.355)),
+    "LeftEar": ((0.06, -0.02, 0.90), (0.125, -0.098, 0.946)),
+    "LeftHandProp": ((0.26, 0.16, 0.385), (0.26, 0.06, 0.385)),
+    "RightUpperLeg": ((-0.065, 0.0, 0.33), (-0.08, -0.05, 0.20)),
+    "RightLowerLeg": ((-0.08, -0.05, 0.20), (-0.09, -0.08, 0.09)),
+    "RightFoot": ((-0.09, -0.08, 0.09), (-0.085, -0.19, 0.03)),
+    "RightShoulder": ((-0.04, -0.01, 0.65), (-0.13, -0.01, 0.65)),
+    "RightUpperArm": ((-0.13, -0.01, 0.65), (-0.20, -0.08, 0.51)),
+    "RightLowerArm": ((-0.20, -0.08, 0.51), (-0.25, -0.16, 0.43)),
+    "RightHand": ((-0.25, -0.16, 0.43), (-0.285, -0.215, 0.36)),
+    "RightEar": ((-0.06, 0.01, 0.90), (-0.144, 0.066, 0.958)),
+    "RightHandProp": ((-0.27, -0.19, 0.395), (-0.27, -0.29, 0.395)),
+}
+
+# 擺回對稱站姿：這些骨頭左右成對，兩邊改成同一個方向（x 取絕對值平均、y／z 平均，再左右鏡射）
+MESHY_SYMMETRIC = ["UpperLeg", "LowerLeg", "Foot", "UpperArm", "LowerArm", "Hand", "HandProp", "Ear"]
+# 這些中線骨轉回 x＝0 的平面（長嘴偏右、尾巴往右甩）：roll 規則才會給出和程式化版一樣的局部 X（左右方向）
+MESHY_MIDLINE = ["Snout", "Tail1", "Tail2", "Tail3"]
+
+# 部位規則（座標單位同 MESHY_BONES；顏色取 Base Color 貼圖在頂點 UV 的 HSV，色相單位度）
+MESHY_BAG_BOX = ((0.005, 0.20), (-0.26, -0.06), (0.36, 0.60))   # 郵差包的範圍 (x, y, z)，掛在左前腹；上緣切在背帶環上方的平直段（切在環上會切出夾點與非流形邊）
+MESHY_HEAD_Z = (0.85, 0.89)                                      # 這以上（帽子、頭頂）全給 Head，中間漸變
+MESHY_EAR = ((0.065, 0.09), (0.875, 0.895))                      # 耳朵：|x| 與 z 各自從前值漸變到後值
+MESHY_SHOE_Z = (0.09, 0.13)                                      # 鞋：這以下全給 Foot，往上漸變到 LowerLeg
+MESHY_LOOSE = 0.05                                               # 拆包後包圍盒對角線比這短（公尺）的鬆散碎塊刪掉
+MESHY_SOLE_Z = 0.12                                             # 量鞋子長軸、鞋底高度用的頂點（這以下）
+MESHY_ARM_R = (0.065, 0.085)                                     # 上臂骨的影響範圍：離骨頭這麼遠之間漸變成軀幹
+
+
+def smoothstep_np(e0, e1, x):
+    import numpy as np
+    t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def meshy_bones(mesh):
+    """BONES 換成 Meshy 的位置（名稱、父骨、順序不變）。Foot 的方向改成量網格上那隻鞋的長軸（左鞋本身往外撇，
+    目測擺的骨頭和鞋不重合，擺回對稱後兩隻鞋會一正一歪）；水平長度、鞋尖高度照 MESHY_BONES。"""
+    import numpy as np
+    co = np.empty(len(mesh.data.vertices) * 3, dtype=np.float32)
+    mesh.data.vertices.foreach_get("co", co)
+    p = co.reshape(-1, 3) / MESHY_CAP_TOP
+    ends = dict(MESHY_BONES)
+    for sd, sx in (("Left", 1), ("Right", -1)):
+        xy = p[(p[:, 2] < MESHY_SOLE_Z) & (p[:, 0] * sx > 0), :2]
+        axis = np.linalg.eigh(np.cov((xy - xy.mean(axis=0)).T))[1][:, -1]
+        axis = -axis if axis[1] > 0 else axis          # 鞋尖朝前（-Y）
+        head, tail = ends[sd + "Foot"]
+        reach = math.hypot(tail[0] - head[0], tail[1] - head[1])
+        ends[sd + "Foot"] = (head, (head[0] + axis[0] * reach, head[1] + axis[1] * reach, tail[2]))
+    s = MESHY_CAP_TOP
+    return [(name, tuple(c * s for c in ends[name][0]), tuple(c * s for c in ends[name][1]), parent)
+            for name, _, _, parent in BONES]
+
+
+def _meshy_images(material):
+    """glb 材質上的三張貼圖：Base Color、金屬／粗糙（經 Separate Color 接 Metallic／Roughness）、法線（經 Normal Map）。"""
+    bsdf = next(n for n in material.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+
+    def source(*sockets):
+        for sock in sockets:
+            for link in bsdf.inputs[sock].links:
+                node = link.from_node
+                if node.type == "TEX_IMAGE":
+                    return node.image
+                for inp in node.inputs:
+                    for l2 in inp.links:
+                        if l2.from_node.type == "TEX_IMAGE":
+                            return l2.from_node.image
+        return None
+    return {"base": source("Base Color"), "metal_rough": source("Roughness", "Metallic"), "normal": source("Normal")}
+
+
+def _meshy_vertex_hsv(me, img):
+    """每個頂點在 Base Color 貼圖上的顏色（各角 UV 取樣平均）轉 HSV；回傳 (V, 3)，色相單位度。"""
+    import numpy as np
+    w, h = img.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(h, w, 4)
+    uv = np.empty(len(me.loops) * 2, dtype=np.float32)
+    me.uv_layers[0].data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2)
+    vi = np.empty(len(me.loops), dtype=np.int32)
+    me.loops.foreach_get("vertex_index", vi)
+    rgb = px[np.clip((uv[:, 1] % 1 * h).astype(int), 0, h - 1), np.clip((uv[:, 0] % 1 * w).astype(int), 0, w - 1), :3]
+    acc = np.zeros((len(me.vertices), 3))
+    np.add.at(acc, vi, rgb)
+    rgb = acc / np.maximum(np.bincount(vi, minlength=len(me.vertices)), 1)[:, None]
+    mx, mn = rgb.max(axis=1), rgb.min(axis=1)
+    d = np.where(mx > mn, mx - mn, 1.0)
+    r, g, b = rgb.T
+    hue = np.where(mx == r, (g - b) / d % 6, np.where(mx == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
+    return np.stack([np.where(mx > mn, hue, 0), np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0), mx], axis=1)
+
+
+def meshy_masks(me, base_img):
+    """部位遮罩（每個頂點一個 bool）：帽子（紅）、郵差包（包的範圍內、不是皮膚也不是短褲）、背帶（包外的藍綠色）、
+    皮膚、藍綠色。回傳 (頂點座標（帽頂高＝1）, 遮罩 dict)。"""
+    import numpy as np
+    co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+    me.vertices.foreach_get("co", co)
+    p = co.reshape(-1, 3) / MESHY_CAP_TOP
+    hue, sat, val = _meshy_vertex_hsv(me, base_img).T
+    red = ((hue < 15) | (hue > 340)) & (sat > 0.5)
+    teal = (hue > 160) & (hue < 210) & (sat > 0.3)
+    skin = (hue > 5) & (hue < 30) & (sat > 0.12) & (sat < 0.55) & (val > 0.45)
+    navy = (hue > 205) & (hue < 250) & (sat > 0.25)
+    (x0, x1), (y0, y1), (z0, z1) = MESHY_BAG_BOX
+    box = (p[:, 0] > x0) & (p[:, 0] < x1) & (p[:, 1] > y0) & (p[:, 1] < y1) & (p[:, 2] > z0) & (p[:, 2] < z1)
+    bag = box & ~skin & ~navy
+    return p, {"cap": red & (p[:, 2] > 0.8), "bag": bag, "strap": teal & ~bag, "skin": skin & ~box, "teal": teal}
+
+
+def meshy_detach_bag(me, base_img):
+    """Meshy 把郵差包的背面和肚子長在一起，甩包時中間會拉出長條三角形。沿包的邊界把包整塊拆下來（頂點群組跟著複製），
+    兩邊的開口各補一片（補片的 UV 縮在最近一個包／皮膚頂點旁邊，看起來是單色；不加頂點，權重不用另外給）。"""
+    p, m = meshy_masks(me, base_img)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    uv = bm.loops.layers.uv.active
+    inside = {f for f in bm.faces if all(m["bag"][v.index] for v in f.verts)}
+    if not inside:
+        raise RuntimeError("找不到郵差包的面，檢查 MESHY_BAG_BOX 與顏色門檻")
+    for _ in range(2):                        # 顏色判斷有雜點：先把包裡的小缺口補起來，再只留最大的一塊
+        inside |= {g for f in inside for e in f.edges for g in e.link_faces
+                   if sum(h in inside for x in g.edges for h in x.link_faces if h is not g) >= 2}
+    blocks, seen = [], set()
+    for f in inside:
+        if f in seen:
+            continue
+        block, todo = set(), [f]
+        seen.add(f)
+        while todo:
+            g = todo.pop()
+            block.add(g)
+            for e in g.edges:
+                for h in e.link_faces:
+                    if h in inside and h not in seen:
+                        seen.add(h)
+                        todo.append(h)
+        blocks.append(block)
+    inside = max(blocks, key=len)
+    cut = {e for f in inside for e in f.edges if not all(g in inside for g in e.link_faces)}
+    rim_verts = {v for e in cut for v in e.verts}
+    center = sum((v.co for v in rim_verts), Vector()) / max(len(rim_verts), 1)
+
+    def nearest_uv(faces, ok):
+        best = min((lp for f in faces for lp in f.loops if ok[lp.vert.index]), key=lambda lp: (lp.vert.co - center).length,
+                   default=None)
+        if best is None:
+            raise RuntimeError("拆包找不到補片取色用的包／皮膚頂點，檢查顏色門檻")
+        return best[uv].uv.copy()
+    fill_uv = {True: nearest_uv(inside, m["teal"]), False: nearest_uv([f for f in bm.faces if f not in inside], m["skin"])}
+
+    before = {e for e in bm.edges if e.is_boundary}
+    bmesh.ops.split_edges(bm, edges=list(cut))
+    rim = {e for e in bm.edges if e.is_boundary and e not in before}
+    holes = 0
+    while rim:                                # 拆開後的開口一圈一圈補（包那側、肚子那側分開）
+        holes += 1
+        first = rim.pop()
+        on_bag = first.link_faces[0] in inside
+        loop, todo = set(), [first]
+        while todo:
+            e = todo.pop()
+            loop.add(e)
+            for v in e.verts:
+                for x in v.link_edges:
+                    if x in rim and (x.link_faces[0] in inside) == on_bag:
+                        rim.discard(x)
+                        todo.append(x)
+        faces = bmesh.ops.holes_fill(bm, edges=list(loop), sides=0)["faces"]
+        if not faces:
+            print(f"警告：拆包的一個開口（{len(loop)} 條邊）沒有圍成一圈，沒補到")
+            continue
+        faces = bmesh.ops.triangulate(bm, faces=faces, quad_method="BEAUTY", ngon_method="BEAUTY")["faces"]
+        # UV：以參考點為中心、平面投影縮到約 2 個 texel 寬（顏色等於單色，但 UV 有面積，切線與描邊法線才算得出來）
+        n = sum((f.normal for f in faces), Vector()).normalized()
+        a = n.orthogonal().normalized()
+        b = n.cross(a)
+        pts = [lp.vert.co for f in faces for lp in f.loops]
+        span = max(max(p.dot(a) for p in pts) - min(p.dot(a) for p in pts),
+                   max(p.dot(b) for p in pts) - min(p.dot(b) for p in pts), 1e-6)
+        mid = sum(pts, Vector()) / len(pts)
+        for f in faces:
+            f.smooth = True
+            for lp in f.loops:
+                d = lp.vert.co - mid
+                lp[uv].uv = fill_uv[on_bag] + Vector((d.dot(a), d.dot(b))) * (MESHY_FILL_UV / span)
+    # 背帶接口附近會多切出幾小片（各約 1 公分、兩邊都不連，遊戲裡帶描邊會變成小黑點）：整塊刪掉；補洞產生的零面積面也清掉
+    loose = []
+    seen = set()
+    for f in bm.faces:
+        if f in seen:
+            continue
+        block, todo = [], [f]
+        seen.add(f)
+        while todo:
+            g = todo.pop()
+            block.append(g)
+            for e in g.edges:
+                for h in e.link_faces:
+                    if h not in seen:
+                        seen.add(h)
+                        todo.append(h)
+        vs = {v for g in block for v in g.verts}
+        lo = Vector((min(v.co.x for v in vs), min(v.co.y for v in vs), min(v.co.z for v in vs)))
+        hi = Vector((max(v.co.x for v in vs), max(v.co.y for v in vs), max(v.co.z for v in vs)))
+        if (hi - lo).length < MESHY_LOOSE:
+            loose.extend(vs)
+    bmesh.ops.delete(bm, geom=loose, context="VERTS")
+    bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
+    # 開口在非流形點相接時，兩邊的補片會疊出背對背、頂點相同的兩片（非流形邊）：成對刪掉
+    twins = {}
+    for f in bm.faces:
+        twins.setdefault(frozenset(v.index for v in f.verts), []).append(f)
+    bmesh.ops.delete(bm, geom=[f for fs in twins.values() if len(fs) > 1 for f in fs], context="FACES")
+    nonmanifold = sum(1 for e in bm.edges if not e.is_manifold)
+    flat = sum(1 for f in bm.faces if f.calc_area() < 1e-10)
+    bm.to_mesh(me)
+    bm.free()
+    print(f"Meshy：郵差包拆開 {len(inside)} 面，切開 {len(cut)} 條邊，補 {holes} 個開口，刪掉 {len(loose)} 個碎塊頂點，"
+          f"非流形邊 {nonmanifold} 條，零面積面 {flat} 個")
+    if nonmanifold or flat:                   # 非流形處的描邊法線會互相抵消（往側邊推），FBX 往返也會拆成開口
+        raise RuntimeError("拆包後還有非流形邊或零面積面，檢查 MESHY_BAG_BOX 的上緣是不是切在背帶環上")
+
+
+def import_meshy(glb):
+    """匯入 glb：焊接 UV 接縫拆開的頂點，正規化（面朝 -Y、Z 朝上、腳底在原點、帽頂＝MESHY_CAP_TOP），
+    減面到 MESHY_TRIS − MESHY_FILL_TRIS 以下（collapse 會保留 UV 接縫，Meshy 原 UV 不重展）。回傳 (網格物件, 原貼圖 dict)。"""
+    import numpy as np
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=glb)
+    new = [o for o in bpy.data.objects if o not in before]
+    meshes = [o for o in new if o.type == "MESH"]
+    if len(meshes) != 1 or len(meshes[0].data.materials) != 1:
+        raise RuntimeError(f"glb 應該是一個網格、一個材質，實際 {len(meshes)} 個網格"
+                           f"、{len(meshes[0].data.materials) if meshes else 0} 個材質")
+    obj = meshes[0]
+    images = _meshy_images(obj.data.materials[0])
+    if images["base"] is None:
+        raise RuntimeError("glb 的材質找不到 Base Color 貼圖")
+    obj.data.transform(obj.matrix_world)
+    for o in new:
+        if o is not obj:
+            bpy.data.objects.remove(o)
+    for c in list(obj.users_collection):
+        c.objects.unlink(obj)
+    COLL.objects.link(obj)
+    obj.parent = ROOT
+    obj.matrix_world = Matrix()
+
+    me = obj.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bm.to_mesh(me)
+    bm.free()
+    co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    lo, hi = co.min(axis=0), co.max(axis=0)
+    s = MESHY_CAP_TOP / (hi[2] - lo[2])
+    me.transform(Matrix.Scale(s, 4) @ Matrix.Translation((-(lo[0] + hi[0]) / 2, -(lo[1] + hi[1]) / 2, -lo[2])))
+
+    src = tri_count(obj)
+    ratio = MESHY_TRIS / src
+    while tri_count(obj) > MESHY_TRIS - MESHY_FILL_TRIS:      # collapse 的結果不一定剛好，超過就把比例再調低一點重減
+        ratio *= 0.99
+        prev, obj.data = obj.data, me
+        if prev is not me:
+            bpy.data.meshes.remove(prev)
+        dec = obj.modifiers.new("Decimate", "DECIMATE")
+        dec.ratio = ratio
+        dec.use_collapse_triangulate = True
+        dg = bpy.context.evaluated_depsgraph_get()
+        obj.data = bpy.data.meshes.new_from_object(obj.evaluated_get(dg))
+        obj.modifiers.clear()
+    if obj.data is not me:
+        bpy.data.meshes.remove(me)
+        me = obj.data
+    for a in [a.name for a in me.attributes if a.name == "custom_normal"]:   # glTF 帶的自訂法線焊接後已失效
+        me.attributes.remove(me.attributes[a])
+    me.shade_smooth()
+    if len(me.uv_layers) != 1:
+        raise RuntimeError(f"Meshy 網格應該只有一層 UV，實際 {len(me.uv_layers)} 層")
+    me.uv_layers[0].name = "UVMap"
+    me.materials.clear()
+    me.materials.append(toon_material("M_meshy", "#FFFFFF"))   # 固有色全由貼圖給，頂點色 RGB＝白
+    obj.name = me.name = "AhJia_Mesh"
+    print(f"Meshy：{src} → {tri_count(obj)} 三角形，{len(me.vertices)} 頂點")
+    return obj, images
+
+
+def _weights_get(mesh, names):
+    import numpy as np
+    w = np.zeros((len(mesh.data.vertices), len(names)), dtype=np.float32)
+    col = {mesh.vertex_groups[n].index: i for i, n in enumerate(names) if n in mesh.vertex_groups}
+    for v in mesh.data.vertices:
+        for ge in v.groups:
+            if ge.group in col:
+                w[v.index, col[ge.group]] = ge.weight
+    return w
+
+
+def _weights_set(mesh, names, w):
+    """整張權重表寫回頂點群組（每列已正規化），太小的權重不寫。"""
+    import numpy as np
+    for i, n in enumerate(names):
+        g = mesh.vertex_groups.get(n) or mesh.vertex_groups.new(name=n)
+        g.remove(list(range(len(w))))
+        for vi in np.nonzero(w[:, i] > 1e-3)[0]:
+            g.add([int(vi)], float(w[vi, i]), "REPLACE")
+
+
+def _islands(me):
+    """每個頂點所在的連通塊編號（union-find）。"""
+    import numpy as np
+    parent = np.arange(len(me.vertices))
+    ev = np.empty(len(me.edges) * 2, dtype=np.int64)
+    me.edges.foreach_get("vertices", ev)
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for a, b in ev.reshape(-1, 2):
+        ra, rb = root(a), root(b)
+        if ra != rb:
+            parent[ra] = rb
+    return np.array([root(i) for i in range(len(parent))])
+
+
+def _meshy_torso(z):
+    """依高度分給 Hips／Spine／Chest（同 torso_weights 的意思，門檻換成帽頂高＝1 的單位）。"""
+    import numpy as np
+    chest = smoothstep_np(0.55, 0.68, z)
+    hips = 1 - smoothstep_np(0.38, 0.50, z)
+    return {"Chest": chest, "Hips": hips, "Spine": np.clip(1 - chest - hips, 0, 1)}
+
+
+def skin_meshy(arm, mesh, base_img):
+    """熱擴散自動權重，拆開郵差包，再用部位規則修：手臂骨只管離骨頭近的頂點（肩甲、殼的側邊歸軀幹）、帽子與頭頂→Head、
+    耳朵→Ear、鞋→Foot、郵差包（拆開的那一塊）→Bag、背帶→軀幹。熱擴散沒算到的頂點（身體裡的小碎片）抄最近的
+    有權重頂點。描邊粗細寫進 OutlineWidth（手 0.6、其餘 1.0）。"""
+    import numpy as np
+    from mathutils.kdtree import KDTree
+    for b in arm.data.bones:
+        b.use_deform = b.name not in ACCESSORY_BONES
+    select_only([mesh, arm], arm)
+    bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+    for b in arm.data.bones:
+        b.use_deform = not b.name.endswith("HandProp")
+    meshy_detach_bag(mesh.data, base_img)     # 熱擴散要在完整的網格上算，拆包放在後面
+    if tri_count(mesh) > MESHY_TRIS:
+        raise RuntimeError(f"拆包補開口後超過 {MESHY_TRIS} 三角形：{tri_count(mesh)}")
+    names = [b.name for b in arm.data.bones if b.use_deform]
+    bi = {n: i for i, n in enumerate(names)}
+    w = _weights_get(mesh, names)
+    p, m = meshy_masks(mesh.data, base_img)
+    x, _, z = p.T
+
+    empty = w.sum(axis=1) < 1e-4
+    if empty.all():
+        raise RuntimeError("自動權重失敗：Meshy 網格沒有頂點拿到權重")
+    kd = KDTree(int((~empty).sum()))
+    for i in np.nonzero(~empty)[0]:
+        kd.insert(p[i], int(i))
+    kd.balance()
+    for i in np.nonzero(empty)[0]:
+        w[i] = w[kd.find(p[i])[1]]
+    w /= w.sum(axis=1, keepdims=True)
+
+    def assign(mask, parts):
+        """mask 內的頂點整列換掉：parts 是 {骨名: 純量或每個頂點一個值}。"""
+        w[mask] = 0
+        for n, v in parts.items():
+            w[mask, bi[n]] = np.broadcast_to(v, mask.shape)[mask]
+
+    # 肩甲蓋在上臂外面（離上臂骨 8～11 公分，手臂表面在 6 公分內），熱擴散卻分到上臂，抬手時殼會被掀開。
+    # 前臂、手旁邊只有殼的側邊，不套這條（骨頭位置是目測擺的，前臂粗細一偏就會把手臂表面切給軀幹而撕開）
+    torso = _meshy_torso(z)
+    for sd in ("Left", "Right"):
+        b = arm.data.bones[sd + "UpperArm"]
+        h, d = np.array(b.head_local) / MESHY_CAP_TOP, np.array(b.tail_local - b.head_local) / MESHY_CAP_TOP
+        # 手肘以外也照套：那裡拿到上臂權重、離手肘點又遠的是殼的側邊（前臂表面主要是 LowerArm 的權重）
+        t = np.clip((p - h) @ d / (d @ d), 0, 1)
+        moved = w[:, bi[sd + "UpperArm"]] * smoothstep_np(*MESHY_ARM_R, np.linalg.norm(p - h - t[:, None] * d, axis=1))
+        w[:, bi[sd + "UpperArm"]] -= moved
+        for n, f in torso.items():
+            w[:, bi[n]] += moved * f
+
+    head = smoothstep_np(*MESHY_HEAD_Z, z)    # 帽子、頭頂全給 Head（和下面的熱擴散權重漸變，低頭時眼睛附近才不會折一條線）
+    w[head > 0] *= (1 - head[head > 0])[:, None]
+    w[head > 0, bi["Head"]] += head[head > 0]
+    ear = smoothstep_np(*MESHY_EAR[0], abs(x)) * smoothstep_np(*MESHY_EAR[1], z) * ~m["cap"]
+    shoe = 1 - smoothstep_np(*MESHY_SHOE_Z, z)
+    for sd, on in (("Left", x > 0), ("Right", x <= 0)):
+        e = on & (ear > 0)                 # 耳朵根部和頭漸變
+        w[e] *= (1 - ear[e])[:, None]
+        w[e, bi[sd + "Ear"]] += ear[e]
+        assign(on & (z < MESHY_SHOE_Z[1]), {sd + "Foot": shoe, sd + "LowerLeg": 1 - shoe})
+    isl = _islands(mesh.data)
+    if not m["bag"].any():
+        raise RuntimeError("找不到郵差包的頂點，檢查 MESHY_BAG_BOX 與顏色門檻")
+    bag_island = np.bincount(isl[m["bag"]]).argmax()
+    if (isl == bag_island).mean() > 0.2:      # 拆包沒拆開時整隻會被當成包
+        raise RuntimeError("郵差包沒有拆成獨立的一塊，檢查 MESHY_BAG_BOX 與顏色門檻")
+    bag = isl == bag_island
+    assign(bag, {"Bag": 1.0})
+    print(f"Meshy：連通塊 {len(np.unique(isl))} 個")
+    assign(m["strap"] & ~bag, torso)
+    np.put_along_axis(w, np.argsort(-w, axis=1)[:, 4:], 0, axis=1)   # Unity 每個頂點最多吃 4 根骨頭：先截好，預覽才和遊戲一樣
+    w /= np.maximum(w.sum(axis=1, keepdims=True), 1e-6)
+    _weights_set(mesh, names, w)
+
+    width = np.where(w[:, bi["LeftHand"]] + w[:, bi["RightHand"]] > 0.5, 0.6, 1.0)
+    g = mesh.vertex_groups.new(name="OutlineWidth")
+    for v in (0.6, 1.0):
+        g.add([int(i) for i in np.nonzero(width == v)[0]], v, "REPLACE")
+
+
+def meshy_straighten(arm, mesh):
+    """MESHY_SYMMETRIC 的骨頭左右改成同一個方向（父骨先轉，子骨跟著走），網格跟著變形後把這個姿勢套成
+    新的靜止姿勢，再照 align_bone_roll 重設 roll。動作的關鍵格是相對靜止姿勢的旋轉，這樣左右才一致。
+    MESHY_MIDLINE 的骨頭轉回中線。最後兩隻鞋底對齊、整隻重新落地。"""
+    import numpy as np
+    targets = {}
+    for base in MESHY_SYMMETRIC:
+        l, r = arm.data.bones["Left" + base], arm.data.bones["Right" + base]
+        dl = (l.tail_local - l.head_local).normalized()
+        dr = (r.tail_local - r.head_local).normalized()
+        d = Vector(((dl.x - dr.x) / 2, (dl.y + dr.y) / 2, (dl.z + dr.z) / 2)).normalized()
+        targets["Left" + base], targets["Right" + base] = d, Vector((-d.x, d.y, d.z))
+    for name in MESHY_MIDLINE:
+        b = arm.data.bones[name]
+        targets[name] = Vector((0, b.tail_local.y - b.head_local.y, b.tail_local.z - b.head_local.z)).normalized()
+    select_only([arm], arm)
+    bpy.ops.object.mode_set(mode="POSE")
+    for name, _, _, _ in BONES:              # BONES 的順序父骨在前
+        if name in targets:
+            bpy.context.view_layer.update()
+            pb = arm.pose.bones[name]
+            q = (pb.tail - pb.head).rotation_difference(targets[name]).to_matrix().to_4x4()
+            pb.matrix = Matrix.Translation(pb.head) @ q @ Matrix.Translation(-pb.head) @ pb.matrix
+    bpy.context.view_layer.update()
+    bpy.ops.object.mode_set(mode="OBJECT")
+    select_only([mesh], mesh)
+    bpy.ops.object.modifier_apply(modifier="Armature")
+    select_only([arm], arm)
+    bpy.ops.object.mode_set(mode="POSE")
+    bpy.ops.pose.armature_apply(selected=False)
+    bpy.ops.object.mode_set(mode="EDIT")
+    ends = {eb.name: [eb.head.copy(), eb.tail.copy()] for eb in arm.data.edit_bones}   # 先記下：相連骨頭的頭尾是連動的
+
+    # 左右腿骨長不同（原姿勢右腳在前、左膝微彎），擺直後鞋底差幾公釐：較高那隻把小腿往下拉長補平（膝蓋不動、腳踝以下整段下移）
+    me = mesh.data
+    co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    shoe = co[:, 2] < MESHY_SOLE_Z * MESHY_CAP_TOP
+    soles = {sd: co[shoe & (co[:, 0] * sx > 0), 2].min() for sd, sx in (("Left", 1), ("Right", -1))}
+    for sd, z0 in soles.items():
+        dz = z0 - min(soles.values())
+        if dz < 1e-5:
+            continue
+        knee, ankle = (np.array(v) for v in ends[sd + "LowerLeg"])
+        t = np.clip((co - knee) @ (ankle - knee) / ((ankle - knee) @ (ankle - knee)), 0, 1)
+        w = _weights_get(mesh, [sd + "Foot", sd + "LowerLeg"])
+        co[:, 2] -= dz * (w[:, 0] + w[:, 1] * t)
+        for n, k in ((sd + "LowerLeg", 1), (sd + "Foot", 0), (sd + "Foot", 1)):
+            ends[n][k].z -= dz
+        print(f"Meshy：{sd} 鞋底高 {dz * 1000:.1f} mm，小腿拉長補平")
+    me.vertices.foreach_set("co", co.ravel())
+    me.update()
+
+    # 腿擺直後鞋底會稍微穿到地面下：網格與骨頭一起重新落地、等比縮回帽頂＝MESHY_CAP_TOP
+    lo, hi = co[:, 2].min(), co[:, 2].max()
+    fit = Matrix.Scale(MESHY_CAP_TOP / (hi - lo), 4) @ Matrix.Translation((0, 0, -lo))
+    me.transform(fit)
+    for eb in arm.data.edit_bones:
+        eb.head, eb.tail = fit @ ends[eb.name][0], fit @ ends[eb.name][1]
+        align_bone_roll(eb)
+        dy = abs((eb.tail - eb.head).normalized().y)
+        if abs(dy - 0.7) < 0.1:           # align_bone_roll 在 |d.y|＝0.7 換規則，太靠近時局部 X 可能不是左右方向
+            print(f"警告：{eb.name} 的方向 |y|＝{dy:.2f} 靠近 roll 規則的分界 0.7")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    mod = mesh.modifiers.new("Armature", "ARMATURE")
+    mod.object = arm
+
+
+def meshy_textures(images, out):
+    """原貼圖解到暫存資料夾，交給 meshy_texture.build_meshy_textures 寫 _BaseMap／_MaskMap；
+    貼圖模組還沒放進來時用暫代版（Base Color 縮到 TEX_SIZE、_MaskMap 全 (0, 0.5, 0)）。回傳 _BaseMap 影像。"""
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="ahjia_meshy_")
+    try:
+        base_path = _meshy_textures_in(images, out, tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    for img in {img.name: img for img in images.values() if img is not None}.values():   # 同一張可能接兩個插槽
+        bpy.data.images.remove(img)
+    return bpy.data.images.load(base_path)
+
+
+def _meshy_textures_in(images, out, tmp):
+    """meshy_textures 的本體：原貼圖存成 png 到 tmp，寫出 _BaseMap／_MaskMap，回傳 _BaseMap 路徑。"""
+    import numpy as np
+    paths = {}
+    for key, img in images.items():
+        paths[key] = None
+        if img is not None:
+            paths[key] = os.path.join(tmp, key + ".png")
+            img.filepath_raw = paths[key]
+            img.file_format = "PNG"
+            img.save()
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import meshy_texture
+    except ModuleNotFoundError as e:
+        if e.name != "meshy_texture":
+            raise
+        meshy_texture = None
+    if meshy_texture:
+        base_path, _ = meshy_texture.build_meshy_textures(paths, out, size=TEX_SIZE)
+    else:
+        print("警告：找不到 meshy_texture.py，貼圖用暫代版")
+        base_path = os.path.join(out, "AhJia3D_BaseMap.png")
+        img = bpy.data.images.load(paths["base"])
+        img.scale(TEX_SIZE, TEX_SIZE)
+        img.filepath_raw = base_path
+        img.file_format = "PNG"
+        img.save()
+        bpy.data.images.remove(img)
+        mask = np.zeros((TEX_SIZE, TEX_SIZE, 3), dtype=np.float32)
+        mask[..., 1] = 0.5
+        bpy.data.images.remove(_save_png("AhJia3D_MaskMap", mask, os.path.join(out, "AhJia3D_MaskMap.png"), "Non-Color"))
+    return base_path
+
+
+def render_weight_sheet(scene, arm, mesh, path, cell=600):
+    """權重檢查圖：每根骨頭一個顏色，頂點色＝各骨頭顏色依權重混合（交界越糊代表漸變越寬）。
+    正面、3/4 前、側面、背面四格，靜止姿勢。"""
+    import numpy as np
+    names = [b.name for b in arm.data.bones if b.use_deform]
+    w = _weights_get(mesh, names)
+    hues = np.arange(len(names)) * 0.618034 % 1.0
+    pal = np.stack([0.5 + 0.5 * np.cos(2 * np.pi * (hues + k / 3)) for k in range(3)], axis=1)
+    rgb = (w @ pal) / np.maximum(w.sum(axis=1, keepdims=True), 1e-6)
+    me = mesh.data
+    attr = me.color_attributes.new("WeightViz", "FLOAT_COLOR", "POINT")
+    attr.data.foreach_set("color", np.concatenate([rgb, np.ones((len(rgb), 1))], axis=1).astype(np.float32).ravel())
+    viz = bpy.data.materials.new("M_weightviz")
+    viz.use_nodes = True
+    nt = viz.node_tree
+    nt.nodes.clear()
+    a = nt.nodes.new("ShaderNodeAttribute")
+    a.attribute_name = "WeightViz"
+    emit = nt.nodes.new("ShaderNodeEmission")
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    nt.links.new(a.outputs["Color"], emit.inputs["Color"])
+    nt.links.new(emit.outputs[0], out.inputs["Surface"])
+    old = list(me.materials)
+    me.materials.clear()
+    me.materials.append(viz)
+    cam = camera(scene, "CamWeights", 1.2, (0, 0, 0.53))
+    tmp = os.path.join(os.path.dirname(path), "_weights.png")
+    cells = []
+    for rz in (0, -35, -90, 180):
+        ROOT.rotation_euler = (0, 0, math.radians(rz))
+        render(scene, cam, tmp, cell, cell)
+        img = bpy.data.images.load(tmp)
+        px = np.empty(cell * cell * 4, dtype=np.float32)
+        img.pixels.foreach_get(px)
+        bpy.data.images.remove(img)
+        cells.append(px.reshape(cell, cell, 4))
+    ROOT.rotation_euler = (0, 0, 0)
+    sheet = np.concatenate(cells, axis=1)
+    res = bpy.data.images.new("weight_sheet", sheet.shape[1], sheet.shape[0])
+    res.pixels.foreach_set(sheet.ravel())
+    res.filepath_raw = path
+    res.file_format = "PNG"
+    res.save()
+    bpy.data.images.remove(res)
+    os.remove(tmp)
+    bpy.data.objects.remove(cam)
+    me.materials.clear()
+    for m in old:
+        me.materials.append(m)
+    bpy.data.materials.remove(viz)
+    me.color_attributes.remove(attr)
+
+
+def build_meshy(glb, out):
+    """Meshy 來源的模型、骨架、權重與貼圖（對應程式化版從建模到 build_textures 那一段）。回傳 (骨架, 網格)。"""
+    mesh, images = import_meshy(glb)
+    arm = build_armature(meshy_bones(mesh))
+    skin_meshy(arm, mesh, images["base"])
+    with open(os.path.join(out, "stats.txt"), "w", encoding="utf-8") as f:
+        f.write(f"{'AhJia_Mesh':10s} {tri_count(mesh):6d}\n{'TOTAL':10s} {tri_count(mesh):6d} 三角形\n")
+    render_weight_sheet(bpy.context.scene, arm, mesh, os.path.join(out, "AhJia3D_weights_raw.png"))
+    meshy_straighten(arm, mesh)
+    render_weight_sheet(bpy.context.scene, arm, mesh, os.path.join(out, "AhJia3D_weights.png"))
+    print("骨頭：" + ", ".join(b.name for b in arm.data.bones))
+    print("頂點群組：" + ", ".join(g.name for g in mesh.vertex_groups))
+    use_basemap(mesh, meshy_textures(images, out))
+    return arm, mesh
+
+
+def meshy_extra_renders(scene, cam, inst, arm, actions, out):
+    """Meshy 版多出的檢查圖：動作總覽的 3/4 前與 3/4 後（看肩甲、殼、包、帽子穿插），以及遊戲尺寸側面圖。"""
+    for name, rz in (("actions_front", -40), ("actions_back", -140)):
+        inst.rotation_euler = (0, 0, math.radians(rz))
+        render_action_sheet(scene, cam, arm, actions, os.path.join(out, f"AhJia3D_{name}.png"))
+    use_action(arm, actions["Idle"][0])
+    scene.frame_set(0)
+    inst.rotation_euler = (0, 0, math.radians(90))      # 面向右，和橫向卷軸裡往前跑的方向一樣
+    gcam = camera(scene, "CamGame", MESHY_CAP_TOP * 1.08, (0, 0, MESHY_CAP_TOP / 2), elev=0)
+    render(scene, gcam, os.path.join(out, "AhJia3D_game_scale.png"), 160, 160)
+    bpy.data.objects.remove(gcam)
+
+#endregion
+
+#region Meshy 動作修正
+
+# Meshy 模型比例和程式化版不同（長嘴、肩甲與殼較厚、郵差包掛在左前腹、爪子細長），共用 ANIMS 的關鍵格
+# 會穿插或滑步，這裡在 build_actions 之後逐格疊上增量。格式：{動作名: {骨名: {格數: (x, y, z)}}}，
+# 角度是度、繞骨頭局部軸（正負號同 ANIMS）；"@Hips" 是 Hips 位移的增量（公尺，骨頭局部座標，Y＝往上）。
+# 增量在 ANIMS 的關鍵格之間平滑過渡（沒寫到的關鍵格是 0），格數寫 "*" 表示整個動作都加同一個增量。
+# 循環動作的第一格與最後一格是同一個姿勢，只寫其中一格，另一格會跟著改，接縫不跳。
+MESHY_ANIM_FIXES = {
+    # 跑步：經過格（5、15）改成「後腳收腿往前、前腳撐地」，支撐腳從前往後走，不再往前拖地；
+    # 收腿往前擺的那隻腳在 8／18 格多抬一點，不貼地掃過
+    "Run": {
+        "LeftUpperLeg": {5: (-10, 0, 0), 8: (12, 0, 0), 15: (10, 0, 0)},
+        "LeftLowerLeg": {5: (-87, 0, 0), 8: (-30, 0, 0), 15: (87, 0, 0)},
+        "LeftFoot": {5: (-20, 0, 0), 15: (20, 0, 0)},
+        "RightUpperLeg": {5: (10, 0, 0), 15: (-10, 0, 0), 18: (12, 0, 0)},
+        "RightLowerLeg": {5: (87, 0, 0), 15: (-87, 0, 0), 18: (-30, 0, 0)},
+        "RightFoot": {5: (20, 0, 0), 15: (-20, 0, 0)},
+        "LeftUpperArm": {"*": (0, 0, 8)},
+    },
+    # 縮成球：Meshy 兩隻鞋靠得近，大腿抱到胸前時兩腳會互穿；大腿稍微外展
+    "Jump": {"LeftUpperLeg": {"*": (0, 0, 5)}, "RightUpperLeg": {"*": (0, 0, -5)}},
+    # 甩包：包掛在左前腹，往後拉會插進肚子、往前上甩會擋到臉；改成往外側拉、往前平甩
+    "Melee": {"Bag": {3: (35, 0, 25), 6: (-50, 0, 0), 9: (-60, 0, 0)}},
+    # 彈弓：拉皮筋的右手原本拉到嘴的高度，會插進長嘴；壓低到胸前
+    "Shoot": {"RightUpperArm": {3: (-35, 0, 0)}, "RightLowerArm": {3: (10, 0, 0)}},
+    # 受傷：頭往後甩時帽子後緣會壓進殼頂；脖子少仰一點，改由上身多仰
+    "Hurt": {"Neck": {3: (12, 0, 0), 9: (7, 0, 0)}, "Spine": {3: (-5, 0, 0), 9: (-3, 0, 0)}},
+}
+
+# 這些動作逐格補 Hips 位移，讓縮成的球繞自己的中心轉、最低點貼地（Meshy 的身體捲起來後球心離 Hips 約 0.18 m，
+# 直接繞 Hips 轉一圈會上下晃約 0.37 m）；球心前後放在腳底原點（y＝0），左右沿用第一格。修正表先套，球心最後算
+MESHY_BALL_ACTIONS = ["Jump"]
+
+
+def _meshy_bounds(scene, mesh, frame):
+    """某一格變形後網格（只算 Armature，描邊等其他修改器先關掉）的世界座標 bbox：回傳 (最小角, 最大角)。"""
+    import numpy as np
+    scene.frame_set(frame)
+    ev = mesh.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    me = ev.to_mesh()
+    co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+    me.vertices.foreach_get("co", co)
+    ev.to_mesh_clear()
+    mw = np.array(mesh.matrix_world)
+    co = co.reshape(-1, 3) @ mw[:3, :3].T + mw[:3, 3]
+    return Vector(co.min(axis=0)), Vector(co.max(axis=0))
+
+
+def _meshy_center_ball(arm, act, last):
+    scene = bpy.context.scene
+    mesh = next(o for o in arm.children if o.type == "MESH")
+    hidden = [m for m in mesh.modifiers if m.type != "ARMATURE" and m.show_viewport]
+    for m in hidden:
+        m.show_viewport = False
+    use_action(arm, act)
+    try:
+        bounds = {f: _meshy_bounds(scene, mesh, f) for f in range(int(act.frame_range[0]), last + 1)}
+    finally:
+        for m in hidden:
+            m.show_viewport = True
+    centers = {f: (lo + hi) / 2 for f, (lo, hi) in bounds.items()}
+    first = min(centers)
+    target = Vector((centers[first].x, 0.0, max(c.z - lo.z for c, (lo, _) in zip(centers.values(), bounds.values()))))
+    # Hips 位移在骨頭的靜止座標裡、先於旋轉套用：世界的平移量換回骨頭局部座標
+    to_local = (arm.matrix_world.to_3x3() @ arm.data.bones["Hips"].matrix_local.to_3x3()).inverted()
+    pb = arm.pose.bones["Hips"]
+    base = {}
+    for f in centers:                      # 先取完每格原本的位移再補 key，補的 key 不影響其他格的底
+        scene.frame_set(f)
+        base[f] = pb.location.copy()
+    for f, c in centers.items():
+        pb.location = base[f] + to_local @ (target - c)
+        pb.keyframe_insert("location", frame=f, group="Hips")
+    scene.frame_set(0)
+
+
+def apply_meshy_anim_fixes(arm, actions):
+    """依 MESHY_ANIM_FIXES 改 build_actions 建好的 Action：在指定格把 rotation_euler（或 Hips 的 location）
+    加上增量後 key 回去，該格原本沒有 key 就以當下的曲線值為底補一個 key。只動骨頭，不碰 shape key。
+    最後對 MESHY_BALL_ACTIONS 做球心置中（修正表改到的姿勢也算進球心）。"""
+    current = arm.animation_data.action
+    for name, bones in MESHY_ANIM_FIXES.items():
+        if name not in actions:
+            raise KeyError(f"MESHY_ANIM_FIXES：沒有動作 {name}")
+        act, last = actions[name]
+        loop = ANIMS[name][0]
+        slot = act.slots[0] if hasattr(act, "slots") and len(act.slots) else None
+        curves = {(fc.data_path, fc.array_index): fc for fc in _fcurves(act, slot)}
+        for bone, frames in bones.items():
+            prop, scale = ("location", 1.0) if bone == "@Hips" else ("rotation_euler", math.radians(1))
+            target = "Hips" if bone == "@Hips" else bone
+            if target not in arm.pose.bones:
+                raise KeyError(f"MESHY_ANIM_FIXES：{name} 沒有骨頭 {target}")
+            path = f'pose.bones["{target}"].{prop}'
+            fcs = [curves.get((path, i)) for i in range(3)]
+            if None in fcs:
+                raise KeyError(f"MESHY_ANIM_FIXES：{name} 的 {target} 沒有 {prop} 曲線")
+            # 控制點＝ANIMS 的關鍵格＋表上寫到的格，沒寫到的控制點增量 0；控制點之間平滑過渡，
+            # 二次動畫逐格 key 的骨頭（尾巴、耳朵、包包）中間格也跟著改，不會只有寫到的那格跳開
+            ctrl = {k: Vector() for k, _ in ANIMS[name][1]}
+            for frame, delta in frames.items():   # 先放具體格數，"*" 最後加到全部控制點，跟表的寫法順序無關
+                if frame != "*":
+                    for f in [frame] + ([last] if loop and frame == 0 else [0] if loop and frame == last else []):
+                        ctrl[f] = ctrl.get(f, Vector()) + Vector(delta)
+            for f in ctrl:
+                ctrl[f] += Vector(frames.get("*", (0, 0, 0)))
+            pts = sorted(ctrl.items())
+
+            def offset(f):
+                if f <= pts[0][0] or f >= pts[-1][0]:
+                    return pts[0][1] if f <= pts[0][0] else pts[-1][1]
+                (f0, d0), (f1, d1) = next((a, b) for a, b in zip(pts, pts[1:]) if a[0] <= f <= b[0])
+                return d0.lerp(d1, smoothstep(f0, f1, f))
+            keyed = sorted({round(kp.co[0]) for fc in fcs for kp in fc.keyframe_points} | set(ctrl))
+            base = {f: [fc.evaluate(f) for fc in fcs] for f in keyed}   # 先全部取值再寫，補的 key 不影響其他格的底
+            for f in keyed:
+                for fc, v, d in zip(fcs, base[f], offset(f)):
+                    if d:
+                        fc.keyframe_points.insert(f, v + d * scale, options={"FAST"})
+            for fc in fcs:
+                fc.update()
+        _finish_curves(act, slot, name, loop)
+    for name in MESHY_BALL_ACTIONS:
+        act, last = actions[name]
+        _meshy_center_ball(arm, act, last)
+        _finish_curves(act, act.slots[0] if hasattr(act, "slots") and len(act.slots) else None, name, ANIMS[name][0])
+    if current:
+        use_action(arm, current)
+
+#endregion
+
 
 def main():
     global ROOT, COLL
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     out = os.path.abspath(argv[argv.index("--out") + 1]) if "--out" in argv else os.getcwd()
+    source = argv[argv.index("--source") + 1] if "--source" in argv else "procedural"
+    if source not in ("procedural", "meshy"):
+        raise SystemExit("用法：--source meshy [--glb <glb 路徑>]；不帶 --source 是程式化版")
     os.makedirs(out, exist_ok=True)
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -2394,28 +3198,32 @@ def main():
     ROOT = bpy.data.objects.new("AhJia_Root", None)
     COLL.objects.link(ROOT)
 
-    parts = [build_body(), build_shell()]
-    parts += [o for o in COLL.objects if o.name == "ShellFill"]
-    parts += build_head_parts() + build_hands_shoes() + build_bag()
-    parts += build_face(parts[0])
+    if source == "meshy":
+        glb = os.path.abspath(argv[argv.index("--glb") + 1]) if "--glb" in argv else MESHY_GLB
+        arm, mesh = build_meshy(glb, out)
+    else:
+        parts = [build_body(), build_shell()]
+        parts += [o for o in COLL.objects if o.name == "ShellFill"]
+        parts += build_head_parts() + build_hands_shoes() + build_bag()
+        parts += build_face(parts[0])
 
-    lines, total = [], 0
-    for o in parts:
-        n = tri_count(o)
-        total += n
-        lines.append(f"{o.name:10s} {n:6d}")
-    lines.append(f"{'TOTAL':10s} {total:6d} 三角形")
-    stats = "\n".join(lines)
-    print(stats)
-    with open(os.path.join(out, "stats.txt"), "w", encoding="utf-8") as f:
-        f.write(stats + "\n")
+        lines, total = [], 0
+        for o in parts:
+            n = tri_count(o)
+            total += n
+            lines.append(f"{o.name:10s} {n:6d}")
+        lines.append(f"{'TOTAL':10s} {total:6d} 三角形")
+        stats = "\n".join(lines)
+        print(stats)
+        with open(os.path.join(out, "stats.txt"), "w", encoding="utf-8") as f:
+            f.write(stats + "\n")
 
-    arm = build_armature()
-    mesh = skin_character(arm, parts)
-    add_expression_drivers(arm, mesh)
-    print("骨頭：" + ", ".join(b.name for b in arm.data.bones))
-    print("頂點群組：" + ", ".join(g.name for g in mesh.vertex_groups))
-    build_textures(mesh, out)
+        arm = build_armature()
+        mesh = skin_character(arm, parts)
+        add_expression_drivers(arm, mesh)
+        print("骨頭：" + ", ".join(b.name for b in arm.data.bones))
+        print("頂點群組：" + ", ".join(g.name for g in mesh.vertex_groups))
+        build_textures(mesh, out)
 
     mesh.data.materials.append(mat("outline"))
     sol = mesh.modifiers.new("Outline", "SOLIDIFY")   # 排在 Armature 之後，描邊跟著變形
@@ -2427,7 +3235,9 @@ def main():
     sol.vertex_group = "OutlineWidth"
     sol.thickness_vertex_group = 0.6
     arm.hide_render = True
-    actions = build_actions(arm)
+    actions = build_actions(arm, face=source != "meshy")
+    if source == "meshy":
+        apply_meshy_anim_fixes(arm, actions)
     set_pose(arm, {})
     arm.animation_data.action = None
 
@@ -2459,7 +3269,8 @@ def main():
     set_pose(arm, TEST_POSE)
     render(scene, cam2, os.path.join(out, "AhJia3D_pose_hero.png"), 1200, 1200)
     set_pose(arm, {})
-    render_face_sheet(scene, insts[1], arm, os.path.join(out, "AhJia3D_faces.png"))
+    if source != "meshy":
+        render_face_sheet(scene, insts[1], arm, os.path.join(out, "AhJia3D_faces.png"))
 
     # 線框：加 Wireframe（保留原網格），描邊先關
     sol.show_render = False
@@ -2475,6 +3286,8 @@ def main():
     # 動作總覽：側面（面向右）
     insts[1].rotation_euler = (0, 0, math.radians(-90))
     render_action_sheet(scene, cam2, arm, actions, os.path.join(out, "AhJia3D_actions.png"))
+    if source == "meshy":
+        meshy_extra_renders(scene, cam2, insts[1], arm, actions, out)
     use_action(arm, actions["Idle"][0])
 
     # 存檔：把模型放回場景、拿掉預覽用的 instance

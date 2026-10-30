@@ -36,6 +36,7 @@ Material:
     - _MidMix: 0.55
     - _OutlineDepth: 0.02
     - _OutlineWidth: 2.5
+    - _RampStrength: 0.6
     - _RimStrength: 0.45
     - _RimWidth: 0.28
     - _ShadowOffset: 0.3
