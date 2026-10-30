@@ -1,0 +1,165 @@
+{
+  "style": "isolated user interface element sprite for a mobile game, flat 2D vector game UI art in 1990s cel-shaded anime style, clean bold dark purple outlines, two-tone hard shading, glossy highlights, color palette limited to hot magenta, tangerine orange, deep violet and warm gold, crisp edges, no scenery, no landscape, no text, no letters, no numbers, no watermark",
+  "background": "centered, single object, isolated on a plain flat solid teal green background",
+  "assets": [
+    {
+      "id": "panel",
+      "model": "flux",
+      "seed": 1101,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a square menu window frame panel with chamfered cut corners, thick hot magenta neon border with a thin tangerine inner line, dark night violet glossy interior with subtle vertical gradient, small gold rivets at the four corners, front view, flat"
+    },
+    {
+      "id": "button",
+      "model": "flux",
+      "seed": 1202,
+      "width": 1024,
+      "height": 512,
+      "prompt": "UI element: a wide horizontal game button plate with slanted cut corners at top left and bottom right, glossy vertical gradient from tangerine orange top to hot magenta bottom, cream white bevel rim, shiny highlight band on the upper half, front view, flat"
+    },
+    {
+      "id": "ribbon",
+      "model": "flux",
+      "seed": 1303,
+      "width": 1024,
+      "height": 512,
+      "prompt": "UI element: a horizontal title banner ribbon with V-shaped notched ends, hot magenta cloth with darker folded underside and a thin pink highlight on top edge, front view, flat, empty"
+    },
+    {
+      "id": "pill",
+      "model": "flux",
+      "seed": 1404,
+      "width": 1024,
+      "height": 512,
+      "prompt": "UI element: a wide rounded capsule label plate, dark night violet glossy fill, thick warm gold rim with small shine, front view, flat, empty"
+    },
+    {
+      "id": "dialogue",
+      "model": "flux",
+      "seed": 1505,
+      "width": 1024,
+      "height": 512,
+      "prompt": "UI element: a wide speech dialogue box frame for a visual novel, rounded rectangle, deep violet translucent glossy interior, hot magenta border with tangerine inner trim, small decorative corner brackets, front view, flat, empty"
+    },
+    {
+      "id": "nameplate",
+      "model": "flux",
+      "seed": 1606,
+      "width": 1024,
+      "height": 512,
+      "prompt": "UI element: a small horizontal name tag plate with slanted parallelogram ends, tangerine orange glossy fill, dark violet outline, highlight stripe, front view, flat, empty"
+    },
+    {
+      "id": "sunburst",
+      "model": "flux",
+      "seed": 1707,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a radial sunburst of golden light rays radiating from the center, sixteen sharp rays fading outward, celebration burst effect, front view",
+      "background_override": "isolated on a plain flat solid pure black background",
+      "mask": false
+    },
+    {
+      "id": "sparkle",
+      "model": "flux",
+      "seed": 1808,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a single four-pointed twinkle star sparkle, bright warm gold and white glow, anime style shine effect",
+      "background_override": "isolated on a plain flat solid pure black background",
+      "mask": false
+    },
+    {
+      "id": "touch_disc",
+      "model": "flux",
+      "seed": 2101,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a round mobile game action button base, perfect circle, dark night violet glossy face, thick hot magenta outer ring with tangerine inner ring, soft highlight arc on the top, front view, flat, empty center"
+    },
+    {
+      "id": "stick_base",
+      "model": "flux",
+      "seed": 2202,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a round virtual joystick base pad for a mobile game, perfect circle, dark translucent violet, four small tangerine arrow notches pointing up down left right at the rim, thin hot magenta ring, front view, flat"
+    },
+    {
+      "id": "stick_knob",
+      "model": "flux",
+      "seed": 2303,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a round glossy joystick thumb knob, perfect circle, tangerine to hot magenta radial gradient, cream white rim, shiny highlight, front view, flat"
+    },
+    {
+      "id": "icon_jump",
+      "model": "flux",
+      "seed": 2404,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a bold game icon of a thick upward arrow with two speed lines under it, cream white fill with dark violet outline, sticker style, front view"
+    },
+    {
+      "id": "icon_melee",
+      "model": "flux",
+      "seed": 2505,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a bold game icon of a brown leather courier messenger bag being swung with a curved motion swoosh, cream white and tangerine accents, dark violet outline, sticker style, front view"
+    },
+    {
+      "id": "icon_shoot",
+      "model": "flux",
+      "seed": 2606,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a bold game icon of a wooden Y-shaped slingshot launching a small cardboard parcel box, cream white and tangerine accents, dark violet outline, sticker style, front view"
+    },
+    {
+      "id": "icon_roll",
+      "model": "flux",
+      "seed": 2707,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a bold game icon of an armadillo rolled into a ball shell with circular spin motion lines, tan and tangerine shell bands, dark violet outline, sticker style, front view"
+    },
+    {
+      "id": "icon_enhance",
+      "model": "flux",
+      "seed": 2808,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a bold game icon of a wrench crossed with an upward plus arrow and small gears, gold and cream white, dark violet outline, sticker style, front view"
+    },
+    {
+      "id": "icon_switch",
+      "model": "flux",
+      "seed": 2909,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a bold game icon of a courier uniform shirt with two circular swap arrows around it, tangerine and cream white, dark violet outline, sticker style, front view"
+    },
+    {
+      "id": "icon_pause",
+      "model": "flux",
+      "seed": 3010,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a bold game icon of a pause symbol, two thick rounded vertical bars, cream white fill with dark violet outline, sticker style, front view"
+    },
+    {
+      "id": "menu_bg",
+      "model": "flux",
+      "seed": 4101,
+      "width": 1536,
+      "height": 864,
+      "mask": false,
+      "prompt": "wide game title screen illustration, a city street at sunset during a heat wave, hot magenta and tangerine sky with a huge setting sun and synthwave haze, silhouettes of apartment towers with neon signs, palm trees, a red mailbox and a stack of cardboard delivery parcels on the sidewalk in the foreground, heat shimmer, lots of empty sky in the upper half for the logo, no characters, no people",
+      "background_override": "",
+      "style_override": "1990s cel-shaded anime background art, flat colors with hard shading, clean dark purple linework, synthwave color palette of hot magenta, tangerine orange, deep violet and warm gold, high detail, no text, no letters, no watermark"
+    }
+  ]
+}

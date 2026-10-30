@@ -79,6 +79,8 @@ namespace Sidescroller
             Var("SsBgFar", 16f, 16f, new Color(0.36f, 0.23f, 0.48f), PivotKind.Center, "Idle", 1),
             Var("SsBgMid", 16f, 16f, new Color(0.15f, 0.2f, 0.42f), PivotKind.Center, "Idle", 2),
             Var("SsUi", 1f, 1f, new Color(1f, 0.55f, 0.75f), PivotKind.Center, "Idle", 8),
+            Var("SsUiSkin", 4f, 4f, new Color(0.88f, 0.27f, 0.48f), PivotKind.Center, "Idle", 10),
+            Var("SsTouchUi", 4f, 4f, new Color(0.17f, 0.11f, 0.29f), PivotKind.Center, "Idle", 11),
             Var("SsPortraitHero", 4f, 4f, new Color(0.85f, 0.2f, 0.17f), PivotKind.Center, "Face", 4),
             Var("SsPortraitBoss", 4f, 4f, new Color(0.54f, 0.3f, 0.7f), PivotKind.Center, "Face", 4),
             Var("SsPortraitMentor", 4f, 4f, new Color(0.25f, 0.65f, 0.3f), PivotKind.Center, "Face", 4),

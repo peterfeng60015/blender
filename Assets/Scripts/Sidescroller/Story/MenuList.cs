@@ -10,12 +10,14 @@ namespace Sidescroller
     /// 滑鼠與觸控點擊用 <see cref="SsUiKit.PointerClicked"/> 讀位置、自己判斷點到哪一項（不建 EventSystem）。
     /// 觸控模式時項目加高到約 9mm（鍵盤／手把版面不變）。
     /// <see cref="Open"/> 的那一幀不處理輸入（interfaces.md §7.3），從下一幀開始。
+    /// 給了 <see cref="UiSkin"/> 時項目用斜角按鈕外框＋陰影，選中的項目稍微放大（unscaled time）；沒給時是純色長條。
     /// </summary>
     public sealed class MenuList
     {
         private const float ItemHeight = 84f;
         private const float ItemWidth = 560f;
         private const float ItemGap = 12f;
+        private const float SelectedScale = 1.06f;
         /// <summary>觸控模式的項目高度：約 9mm，最少 120（dpi 不可信或偏低時）；上限 140，暫停選單 4 項在 19.5:9 手機上還放得下。</summary>
         private const float TouchItemMm = 9f;
         private const float TouchItemFallback = 120f;
@@ -23,20 +25,33 @@ namespace Sidescroller
 
         private readonly RectTransform _root;
         private readonly TMP_FontAsset _font;
+        private readonly UiSkin _skin;
         private readonly List<RectTransform> _items = new List<RectTransform>();
         private readonly List<Image> _bars = new List<Image>();
         private readonly List<TextMeshProUGUI> _labels = new List<TextMeshProUGUI>();
+        /// <summary>有外框時每個項目字的陰影（沒有外框時是 null）。</summary>
+        private readonly List<TextMeshProUGUI> _shadows = new List<TextMeshProUGUI>();
         private int _openedFrame = -1;
         private float _itemHeight = ItemHeight;
 
         public int Selected { get; private set; }
         public int Count => _items.Count;
         public RectTransform Root => _root;
+        /// <summary>目前顯示中的項目由上到下的總高度（畫布單位）。</summary>
+        public float ContentHeight
+        {
+            get
+            {
+                var n = ActiveCount();
+                return n == 0 ? 0f : n * _itemHeight + (n - 1) * ItemGap;
+            }
+        }
 
         /// <summary>清單的中心放在 parent 的 (0.5, anchorY)，再往下偏 offsetY。</summary>
-        public MenuList(Transform parent, TMP_FontAsset font, float anchorY, float offsetY)
+        public MenuList(Transform parent, TMP_FontAsset font, float anchorY, float offsetY, UiSkin skin = null)
         {
             _font = font;
+            _skin = skin;
             _root = SsUiKit.Rect("Items", parent, new Vector2(0.5f, anchorY), new Vector2(0.5f, anchorY), new Vector2(0.5f, 1f));
             _root.anchoredPosition = new Vector2(0f, offsetY);
             _root.sizeDelta = new Vector2(ItemWidth, 0f);
@@ -51,6 +66,8 @@ namespace Sidescroller
                     AddItem();
                 _items[i].gameObject.SetActive(true);
                 _labels[i].text = labels[i];
+                if (_shadows[i] != null)
+                    _shadows[i].text = labels[i];
             }
             for (var i = labels.Count; i < _items.Count; i++)
                 _items[i].gameObject.SetActive(false);
@@ -63,6 +80,7 @@ namespace Sidescroller
         /// <summary>每幀呼叫一次；選定時回傳選項序號，否則 -1。</summary>
         public int Tick()
         {
+            AnimateSelection();
             if (Time.frameCount == _openedFrame || Count == 0)
             {
                 UpdateItemHeight();
@@ -148,10 +166,27 @@ namespace Sidescroller
         {
             var i = _items.Count;
             var item = SsUiKit.Rect($"Item{i}", _root, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
-            var bar = SsUiKit.AddImage(item, Color.clear);
+            Image bar;
+            if (_skin != null)
+            {
+                var drop = SsUiKit.Fill("Shadow", item);
+                drop.offsetMin = new Vector2(-10f, -22f);
+                drop.offsetMax = new Vector2(18f, 6f);
+                _skin.Add(drop, UiSkin.Shadow, 0.5f, new Color(1f, 1f, 1f, 0.8f));
+                bar = _skin.Add(SsUiKit.Fill("Bar", item), UiSkin.ButtonOff, 0.5f);
+            }
+            else
+            {
+                bar = SsUiKit.AddImage(item, Color.clear);
+            }
             var labelRt = SsUiKit.Fill("Label", item);
-            var label = SsUiKit.AddText(labelRt, _font, 46f, SsUiKit.Paper);
+            TextMeshProUGUI label, shadow = null;
+            if (_skin != null)
+                (label, shadow) = UiSkin.Label(labelRt, _font, 46f, SsUiKit.Paper);
+            else
+                label = SsUiKit.AddText(labelRt, _font, 46f, SsUiKit.Paper);
             _items.Add(item);
+            _shadows.Add(shadow);
             _bars.Add(bar);
             _labels.Add(label);
             PlaceItem(i);
@@ -162,9 +197,26 @@ namespace Sidescroller
             for (var i = 0; i < _items.Count; i++)
             {
                 var on = i == Selected;
-                _bars[i].color = on ? SsUiKit.Magenta : new Color(1f, 1f, 1f, 0.06f);
+                if (_skin != null)
+                    _skin.Set(_bars[i], on ? UiSkin.ButtonOn : UiSkin.ButtonOff, 0.5f);
+                else
+                    _bars[i].color = on ? SsUiKit.Magenta : new Color(1f, 1f, 1f, 0.06f);
                 _labels[i].color = on ? Color.white : new Color(1f, 1f, 1f, 0.7f);
-                            }
+            }
+        }
+
+        /// <summary>有外框時選中的項目放大到 <see cref="SelectedScale"/>、其他回 1（unscaled，暫停中也動）。</summary>
+        private void AnimateSelection()
+        {
+            if (_skin == null)
+                return;
+            var k = 1f - Mathf.Exp(-Mathf.Min(Time.unscaledDeltaTime, 0.1f) * 18f);
+            for (var i = 0; i < _items.Count; i++)
+            {
+                var target = i == Selected ? SelectedScale : 1f;
+                var s = Mathf.Lerp(_items[i].localScale.x, target, k);
+                _items[i].localScale = new Vector3(s, s, 1f);
+            }
         }
         #endregion
     }
