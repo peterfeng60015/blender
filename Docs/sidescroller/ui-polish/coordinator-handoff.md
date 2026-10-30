@@ -48,6 +48,36 @@
 | `/Users/iulee/UnityProject/blender-hero-meshy/Tools/Blender/Hero3D/meshy/concept_refined.png`（menu_hero 的 IP-Adapter 參考圖來源） | 已在 main：`Tools/Blender/Hero3D/meshy/concept_refined.png`（整合 worktree 已刪） |
 | 主角線的約定、審查與交接（hero-meshy-*） | `notes/hero-meshy/`（含新舊版對照圖 `final/`） |
 
+### 新電腦準備清單（照順序做）
+
+1. **Git LFS**（一定要先做，否則 Meshy glb、設計圖與既有 LFS 字型素材只會拉到指標檔）：
+   ```bash
+   brew install git-lfs
+   git lfs install
+   ```
+2. **clone 並拿到 4 個 UI 分支**（每個分支開一個 worktree，各自接手；不要直接在同一個資料夾切來切去，Unity 匯入會一直重來）：
+   ```bash
+   git clone https://github.com/peterfeng60015/blender.git
+   cd blender
+   git lfs pull
+   git fetch origin claude/upbeat-golick-2db7a2 claude/ui-touch-82e39b claude/ui-menu-eaad50 claude/ui-hud-352f1a
+   git worktree add ../blender-ui    -b claude/upbeat-golick-2db7a2 origin/claude/upbeat-golick-2db7a2
+   git worktree add ../blender-touch -b claude/ui-touch-82e39b      origin/claude/ui-touch-82e39b
+   git worktree add ../blender-menu  -b claude/ui-menu-eaad50       origin/claude/ui-menu-eaad50
+   git worktree add ../blender-hud   -b claude/ui-hud-352f1a        origin/claude/ui-hud-352f1a
+   ```
+   確認 LFS 檔是真的檔案：`git lfs ls-files` 列出的檔案大小不是幾百 bytes 的指標。
+3. **Unity 6000.3.27f1**（Unity Hub 安裝，加 **Android Build Support** 與 **WebGL Build Support** 模組；各角色的 Editor／Android／WebGL 腳本編譯驗證都要用）。同一個專案路徑一次只開一個 Unity；batchmode 跑完被改寫的 `Assets/Settings/*.asset`、`.vscode/settings.json` 要還原。
+4. **第一次開專案很久**：每個 worktree 第一次開 Unity 都要從頭匯入（原 Mac 實測一個 worktree 的 `Library` 約 7GB、十幾分鐘）。4 個 worktree 都開約需 30GB，加上 ComfyUI 約 28GB，**請先確認磁碟至少有 70GB 可用**；可以一次只開一兩個，做完再開下一個。
+5. **ComfyUI 與模型**（只有 ui 需要）：照 ui 分支 `Docs/sidescroller/ui-polish/ui-handoff.md`「ComfyUI 環境」一節安裝（`git clone` ComfyUI、建 venv、裝 `ComfyUI_IPAdapter_plus` 與 `ComfyUI_BiRefNet_ll` 兩個自訂節點、下載 5 個模型共約 28GB）。下載前照規則把檔名、來源、大小列給使用者確認。需要 Apple Silicon（MPS）或能跑 FLUX 的 NVIDIA 顯示卡。接著把 main 的 `Docs/sidescroller/ui-polish/notes/comfyui-out/raw/`、`ref/` 拷到 `../blender-ui/Tools/ComfyUI/out/` 底下，接續後製。
+6. **Blender 5.2**（選用）：只有要重跑主角 `Tools/Blender/Hero3D/hero3d.py --source meshy` 時才需要；UI 線用不到。
+7. **看板**（選用）：`git clone https://github.com/peterfeng60015/session-dashboard.git`，照它的 `docs/setup.md`「開一個新看板」重開（角色 ui、touch、menu、hud）。
+8. **第一天的接手順序**：
+   1. 開協調 session，讀本檔、`notes/ui-split-contract.md`，以及 4 份角色交接（各分支的 `Docs/sidescroller/ui-polish/<角色>-handoff.md`）。
+   2. ui 先啟動 ComfyUI，把佇列剩下的 18 張生完（提示詞在 `Tools/ComfyUI/assets.json`）、後製、commit＋push 到 `claude/upbeat-golick-2db7a2`，給使用者看暫停＋通關的 ComfyUI 版。
+   3. ui 交出素材後，touch／menu／hud 各自 `git merge origin/claude/upbeat-golick-2db7a2`，用新版截圖工具（`UiShotCapture`，不加 `-batchmode`、會開 Editor 視窗）重拍前後對照，補完 review 與反向驗證，交使用者 review。
+   4. 協調整合 4 個分支、跨邊界審查、從 Entry 實測，交使用者 review 後再問 commit／push／合進 main。
+
 不在 repo、新電腦要自己準備的：
 - **ComfyUI 與模型（約 28GB）**：照 `ui-handoff.md`（ui 分支）「ComfyUI 環境」一節安裝；模型下載前照規則列檔名、來源、大小給使用者確認。需要 Apple Silicon（MPS）或能跑 FLUX 的 NVIDIA 顯示卡。
 - **session 編號**只在原 Mac 的 Claude app 有效；新電腦開新 session，讀本檔與各角色交接接手。
