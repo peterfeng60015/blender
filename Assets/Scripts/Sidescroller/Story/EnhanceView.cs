@@ -25,8 +25,12 @@ namespace Sidescroller
         private const int Smokes = 7;
         #endregion
 
-        private static readonly Color PanelColor = new Color(0.06f, 0.04f, 0.1f, 0.95f);
-        private static readonly Color LabelColor = new Color(1f, 1f, 1f, 0.55f);
+        private static readonly Color LabelColor = new Color(1f, 0.97f, 0.9f, 0.7f);
+        private static readonly Color HelpColor = new Color(1f, 0.97f, 0.9f, 0.82f);
+        /// <summary>成功率大字的上限（畫布單位）：比名稱大一截就好，不要壓過整個面板。</summary>
+        private const float RateMaxSize = 96f;
+        /// <summary>「關閉」鈕寬度。</summary>
+        private const float CloseW = 168f;
         private static readonly Color SuccessColor = new Color32(0xFF, 0xD2, 0x3C, 0xFF);
         private static readonly Color FailColor = new Color(0.72f, 0.72f, 0.75f);
 
@@ -38,6 +42,8 @@ namespace Sidescroller
         #region 畫面物件
         private readonly RectTransform _root;
         private readonly RectTransform _panel;
+        private readonly UiPop _pop;
+        private readonly UiSkin _skin;
         private readonly RectTransform _list;
         private readonly List<LootButton> _rows = new List<LootButton>();
         private readonly List<TextMeshProUGUI> _rowTags = new List<TextMeshProUGUI>();
@@ -48,7 +54,9 @@ namespace Sidescroller
         private readonly TextMeshProUGUI _name;
         private readonly TextMeshProUGUI _info;
         private readonly TextMeshProUGUI _rateLabel;
+        private readonly RectTransform _rateRt;
         private readonly TextMeshProUGUI _rate;
+        private readonly TextMeshProUGUI _rateShadow;
         private readonly TextMeshProUGUI _fail;
         private readonly TextMeshProUGUI _result;
         private readonly LootButton _enhance;
@@ -80,46 +88,45 @@ namespace Sidescroller
         private Color _resultColor;
         #endregion
 
-        public EnhanceView(Transform parent, TMP_FontAsset font, GameSession session, LootPointer pointer, LootUiArt art)
+        public EnhanceView(Transform parent, TMP_FontAsset font, GameSession session, LootPointer pointer, LootUiArt art, UiSkin skin)
         {
             _loot = session.Loot;
             _font = font;
             _pointer = pointer;
             _art = art;
+            _skin = skin;
 
             _root = SsUiKit.Fill("Enhance", parent);
-            SsUiKit.AddImage(_root, new Color(0.02f, 0.01f, 0.05f, 0.55f));
-            _panel = SsUiKit.Rect("Panel", _root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            SsUiKit.AddImage(_panel, PanelColor);
-
-            var title = TopLeftText("Title", _panel, 52f, SsUiKit.Gold);
-            title.rectTransform.anchoredPosition = new Vector2(Pad, -Pad + 6f);
-            title.rectTransform.sizeDelta = new Vector2(700f, 70f);
-            title.text = StoryTexts.EnhanceTitle;
+            _panel = LootFrame.Panel(_root, skin, out _pop);
+            LootFrame.Ribbon(_panel, skin, font, StoryTexts.EnhanceTitle, 56f);
 
             _list = SsUiKit.Rect("List", _panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
-            _pageUp = new LootButton("PageUp", _panel, font, "▲", 36f);
-            _pageDown = new LootButton("PageDown", _panel, font, "▼", 36f);
+            _pageUp = new LootButton("PageUp", _panel, font, "▲", 36f, skin);
+            _pageDown = new LootButton("PageDown", _panel, font, "▼", 36f, skin);
             _empty = TopLeftText("Empty", _list, 34f, LabelColor);
             _empty.text = StoryTexts.EnhanceEmpty;
 
             #region 右邊：詳細
             _detail = SsUiKit.Rect("Detail", _panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
-            SsUiKit.AddImage(_detail, new Color(1f, 1f, 1f, 0.04f));
+            skin.Add(_detail, UiSkin.Pill, 0.5f);
             _name = TopLeftText("Name", _detail, 44f, SsUiKit.Paper);
             _info = TopLeftText("Info", _detail, 32f, SsUiKit.Paper);
             _info.richText = true;
             _info.lineSpacing = 14f;
             _rateLabel = TopLeftText("RateLabel", _detail, 32f, LabelColor);
             _rateLabel.text = StoryTexts.EnhanceRate;
-            _rate = TopLeftText("Rate", _detail, 132f, SsUiKit.Gold);
+            _rateRt = SsUiKit.Rect("Rate", _detail, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
+            (_rate, _rateShadow) = UiSkin.Label(_rateRt, font, RateMaxSize, SsUiKit.Gold);
+            _rate.alignment = _rateShadow.alignment = TextAlignmentOptions.TopLeft;
+            _rateShadow.rectTransform.anchoredPosition = new Vector2(0f, -5f);
             _fail = TopLeftText("Fail", _detail, 30f, new Color(1f, 0.6f, 0.55f));
             _result = TopLeftText("Result", _detail, 40f, SsUiKit.Gold);
-            _enhance = new LootButton("Enhance", _detail, font, StoryTexts.EnhanceButton, 46f);
+            _enhance = new LootButton("Enhance", _detail, font, StoryTexts.EnhanceButton, 46f, skin);
+            _enhance.SetFont(46f, 28f);
             #endregion
 
-            _close = new LootButton("Close", _panel, font, StoryTexts.Close, 38f);
-            _help = TopLeftText("Help", _panel, 28f, new Color(1f, 1f, 1f, 0.6f));
+            _close = new LootButton("Close", _panel, font, StoryTexts.Close, 34f, skin);
+            _help = TopLeftText("Help", _panel, 28f, HelpColor);
             _help.textWrappingMode = TextWrappingModes.NoWrap;
 
             #region 結果演出（金光／灰煙）
@@ -161,6 +168,7 @@ namespace Sidescroller
             Layout(true);
             Rebuild(null);
             Draw();
+            _pop.Play();
         }
 
         /// <summary>收起（演出中被關也沒關係：強化結果在按下時就已經決定並寫進 LootState）。</summary>
@@ -176,6 +184,7 @@ namespace Sidescroller
         /// <summary>每幀呼叫（開著時）；回 false＝要求關閉。</summary>
         public bool Tick()
         {
+            _pop.Tick(Mathf.Min(Time.unscaledDeltaTime, 0.1f));
             Layout(false);
             if (_dirty)
                 Rebuild(Current);
@@ -399,7 +408,8 @@ namespace Sidescroller
             _rowH = touch ? Mathf.Clamp(Mathf.Max(SsUiKit.MmToUnits(TouchRowMm), TouchRowMin), TouchRowMin, TouchRowMax) : KeyRowH;
             var buttonH = touch ? _rowH : KeyButtonH;
             var panelW = Mathf.Min(PanelW, size.x - 24f);
-            var panelH = Mathf.Min(980f, size.y - 16f);
+            // 上方留給露出面板的半截緞帶標題
+            var panelH = Mathf.Min(920f, size.y - 16f - (LootFrame.RibbonH / 2f - LootFrame.RibbonInset) * 2f);
             _panel.sizeDelta = new Vector2(panelW, panelH);
 
             var titleH = Mathf.Max(76f, buttonH + 8f);
@@ -415,11 +425,10 @@ namespace Sidescroller
             _visibleRows = Mathf.Max(1, Mathf.FloorToInt((bodyH + RowGap) / (_rowH + RowGap)));
             for (var i = _rows.Count; i < _visibleRows; i++)
             {
-                var row = new LootButton($"Row{i}", _list, _font, string.Empty, 34f);
-                row.Label.alignment = TextAlignmentOptions.Left;
-                row.Label.rectTransform.offsetMin = new Vector2(20f, 0f);
-                row.Label.rectTransform.offsetMax = new Vector2(-140f, 0f);
-                row.Label.overflowMode = TextOverflowModes.Ellipsis;
+                var row = new LootButton($"Row{i}", _list, _font, string.Empty, 34f, _skin);
+                row.SetFont(34f, 34f, TextAlignmentOptions.Left);
+                row.SetPadding(24f, 140f);
+                row.SetEllipsis();
                 var tagRt = SsUiKit.Fill("Tag", row.Rt);
                 tagRt.offsetMax = new Vector2(-16f, 0f);
                 var tag = SsUiKit.AddText(tagRt, _font, 26f, LabelColor, TextAlignmentOptions.Right);
@@ -454,9 +463,9 @@ namespace Sidescroller
             var rateH = Mathf.Clamp(rateTop - 40f - (buttonTop + 12f + failH), 60f, 150f);
             _rateLabel.rectTransform.anchoredPosition = new Vector2(32f, rateTop);
             _rateLabel.rectTransform.sizeDelta = new Vector2(300f, 44f);
-            _rate.rectTransform.anchoredPosition = new Vector2(32f, rateTop - 40f);
-            _rate.rectTransform.sizeDelta = new Vector2(inner * 0.5f, rateH);
-            _rate.fontSize = Mathf.Min(132f, rateH * 0.88f);
+            _rateRt.anchoredPosition = new Vector2(32f, rateTop - 40f);
+            _rateRt.sizeDelta = new Vector2(inner * 0.5f, rateH);
+            _rate.fontSize = _rateShadow.fontSize = Mathf.Min(RateMaxSize, rateH * 0.88f);
             _fail.rectTransform.anchoredPosition = new Vector2(32f, rateTop - 40f - rateH);
             _fail.rectTransform.sizeDelta = new Vector2(inner, failH);
             _enhance.Place(new Vector2(dw - 32f - enhanceW, buttonTop), new Vector2(enhanceW, enhanceH));
@@ -467,7 +476,7 @@ namespace Sidescroller
             _result.fontSizeMax = 40f;
             _result.fontSizeMin = 24f;
 
-            _close.Place(new Vector2(panelW - Pad - 200f, -Pad + 4f), new Vector2(200f, buttonH));
+            _close.Place(new Vector2(panelW - Pad - CloseW, -Pad + 4f), new Vector2(CloseW, buttonH));
             _help.rectTransform.anchoredPosition = new Vector2(Pad, -panelH + Pad + helpH);
             _help.rectTransform.sizeDelta = new Vector2(panelW - Pad * 2f, helpH);
             _help.text = touch ? StoryTexts.EnhanceHelpTouch : StoryTexts.EnhanceHelp;
@@ -488,14 +497,8 @@ namespace Sidescroller
                     continue;
                 var item = _entries[index];
                 var selected = index == _selected;
-                var bg = selected ? SsUiKit.Magenta : LootButton.IdleColor;
-                if (row.Bg.color != bg)
-                    row.Bg.color = bg;
-                var fg = selected ? Color.white : ItemData.RarityColor(item.Rarity);
-                if (row.Label.color != fg)
-                    row.Label.color = fg;
-                if (row.Label.text != item.DisplayName)
-                    row.Label.text = item.DisplayName;
+                row.SetState(selected, true, selected ? Color.white : ItemData.RarityColor(item.Rarity));
+                row.SetText(item.DisplayName);
                 _rowTags[i].gameObject.SetActive(_loot.GetEquipped(item.Slot) == item);
             }
             var overflow = _entries.Count > _visibleRows;
@@ -524,7 +527,7 @@ namespace Sidescroller
             if (max)
             {
                 _info.text = $"<color=#A9A3B8>{StoryTexts.EnhanceLevel}</color>　+{level}\n{StoryTexts.EnhanceMax}";
-                _rate.text = "—";
+                SetRate("—");
                 _fail.text = string.Empty;
             }
             else
@@ -535,14 +538,13 @@ namespace Sidescroller
                     $"<color=#A9A3B8>{StoryTexts.EnhanceLevel}</color>　+{level} → +{level + 1}\n" +
                     $"<color=#A9A3B8>{StoryTexts.EnhanceNext}</color>　{effect}\n" +
                     $"<color=#A9A3B8>{StoryTexts.EnhanceCost}</color>　<color=#{costColor}>{cost}</color>{StoryTexts.EnhanceOwnedPrefix}{owned}{StoryTexts.EnhanceOwnedSuffix}";
-                _rate.text = Enhance.SuccessPercent(level) + "%";
-                _fail.text = Enhance.FailureText(level);
+                var percent = Enhance.SuccessPercent(level);
+                SetRate(percent + "%");
+                // 必定成功時沒有失敗後果（FailureText 回「—」），不顯示，免得成功率下方多一條紅線
+                _fail.text = percent >= 100 ? string.Empty : Enhance.FailureText(level);
             }
             _enhance.SetState(true, enough);
-            _enhance.Label.text = max ? StoryTexts.EnhanceMax : enough ? StoryTexts.EnhanceButton : StoryTexts.EnhanceNoParts;
-            _enhance.Label.enableAutoSizing = true;
-            _enhance.Label.fontSizeMax = 46f;
-            _enhance.Label.fontSizeMin = 28f;
+            _enhance.SetText(max ? StoryTexts.EnhanceMax : enough ? StoryTexts.EnhanceButton : StoryTexts.EnhanceNoParts);
             _result.gameObject.SetActive(_resultText != null && !_effectPlaying);
             if (_resultText != null)
             {
@@ -550,6 +552,12 @@ namespace Sidescroller
                 _result.color = _resultColor;
             }
             #endregion
+        }
+
+        private void SetRate(string text)
+        {
+            _rate.text = text;
+            _rateShadow.text = text;
         }
 
         private TextMeshProUGUI TopLeftText(string name, Transform parent, float size, Color color)

@@ -24,7 +24,7 @@ namespace Sidescroller
         /// <summary>≥0：等這一幀過了才 SetPaused(false)。</summary>
         private int _unpauseAfterFrame = -1;
 
-        public LootScreens(Transform parent, TMP_FontAsset font, GameSession session, StoryUi ui)
+        public LootScreens(Transform parent, TMP_FontAsset font, GameSession session, StoryUi ui, UiSkin skin)
         {
             _session = session;
             _ui = ui;
@@ -32,16 +32,15 @@ namespace Sidescroller
             #region 補給站提示「E：強化」（畫在補給站上方；觸控模式改顯示「強化」按鈕）
             _promptRoot = SsUiKit.Fill("StationPrompt", parent);
             _prompt = SsUiKit.Rect("Prompt", _promptRoot, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0f));
-            _prompt.sizeDelta = new Vector2(260f, 64f);
-            SsUiKit.AddImage(_prompt, new Color(0.05f, 0.03f, 0.1f, 0.78f));
-            var text = SsUiKit.AddText(SsUiKit.Fill("Text", _prompt), font, 36f, SsUiKit.Gold);
-            text.textWrappingMode = TextWrappingModes.NoWrap;
-            text.text = StoryTexts.StationPrompt;
+            _prompt.sizeDelta = new Vector2(280f, 76f);
+            skin.Add(_prompt, UiSkin.Pill, 0.4f);
+            var (text, shadow) = UiSkin.Label(SsUiKit.Fill("Text", _prompt), font, 36f, SsUiKit.Gold);
+            text.text = shadow.text = StoryTexts.StationPrompt;
             _promptRoot.gameObject.SetActive(false);
             #endregion
 
-            _inventory = new InventoryView(parent, font, session, _pointer);
-            _enhance = new EnhanceView(parent, font, session, _pointer, _art);
+            _inventory = new InventoryView(parent, font, session, _pointer, skin);
+            _enhance = new EnhanceView(parent, font, session, _pointer, _art, skin);
         }
 
         /// <summary>背包或強化介面開著（含關閉後等一幀解除暫停的期間）。</summary>

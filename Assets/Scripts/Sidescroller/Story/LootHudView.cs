@@ -37,15 +37,18 @@ namespace Sidescroller
         private const float LabelTime = 1.6f, LabelFade = 0.4f;
         /// <summary>這段時間內重複的「背包已滿」不重新閃（例如好幾件同時落地都放不下）。</summary>
         private const float FullCooldown = 0.6f;
-        private static readonly Color LabelBgColor = new Color(0.05f, 0.03f, 0.1f, 0.9f);
+        /// <summary>通關時背包圖示淡出的時間（秒，unscaled）。</summary>
+        private const float HideTime = 0.3f;
         #endregion
 
         private readonly GameSession _session;
         private readonly RectTransform _root;
         private readonly Image _bagImage;
         private readonly RectTransform _label;
-        private readonly Image _labelBg;
+        private readonly CanvasGroup _bagGroup;
+        private readonly CanvasGroup _labelGroup;
         private readonly TextMeshProUGUI _labelText;
+        private readonly TextMeshProUGUI _labelShadow;
         private readonly List<Flight> _flights = new List<Flight>();
         private bool _disposed;
 
@@ -59,8 +62,11 @@ namespace Sidescroller
         private int _labelParts;
         private string _labelPartsName;
         private float _lastFullAt = -10f;
+        /// <summary>通關了：背包圖示淡出後關掉，之後撿到的直接放進背包、不再顯示回饋。</summary>
+        private bool _cleared;
+        private float _hideLeft;
 
-        public LootHudView(Transform parent, TMP_FontAsset font, GameSession session)
+        public LootHudView(Transform parent, TMP_FontAsset font, GameSession session, UiSkin skin)
         {
             _session = session;
             _root = SsUiKit.Fill("LootHud", parent);
@@ -70,18 +76,26 @@ namespace Sidescroller
             var bag = SsUiKit.Rect("BagIcon", _root, Vector2.one, Vector2.one, new Vector2(0.5f, 0.5f));
             bag.sizeDelta = new Vector2(BagSize, BagSize);
             _bagImage = SsUiKit.AddImage(bag, Color.white, LootVisuals.BagSprite());
+            _bagGroup = bag.gameObject.AddComponent<CanvasGroup>();
+            _bagGroup.blocksRaycasts = false;
+            _bagGroup.interactable = false;
             BagIcon = bag;
 
             _label = SsUiKit.Rect("Label", _root, Vector2.one, Vector2.one, new Vector2(1f, 0.5f));
-            _label.sizeDelta = new Vector2(200f, 56f);
-            _labelBg = SsUiKit.AddImage(_label, LabelBgColor);
+            _label.sizeDelta = new Vector2(200f, 64f);
+            skin.Add(_label, UiSkin.Pill, 0.35f);
+            _labelGroup = _label.gameObject.AddComponent<CanvasGroup>();
+            _labelGroup.blocksRaycasts = false;
+            _labelGroup.interactable = false;
             var textRt = SsUiKit.Fill("Text", _label);
-            _labelText = SsUiKit.AddText(textRt, font, 32f, SsUiKit.Paper);
-            _labelText.textWrappingMode = TextWrappingModes.NoWrap;
+            (_labelText, _labelShadow) = UiSkin.Label(textRt, font, 32f, SsUiKit.Paper);
             _label.gameObject.SetActive(false);
 
             if (session != null)
+            {
                 session.PausedChanged += OnPausedChanged;
+                session.StageCleared += OnStageCleared;
+            }
             Relayout();
         }
 
@@ -105,6 +119,7 @@ namespace Sidescroller
             var udt = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
             TickFlights(udt);
             TickFeedback(udt);
+            TickHide(udt);
         }
 
         #region 拾取飛行
@@ -127,9 +142,9 @@ namespace Sidescroller
             if (reservation == null)
                 return;
             var cam = FindCamera();
-            if (_disposed || cam == null || _session == null || _session.Paused)
+            if (_disposed || _cleared || cam == null || _session == null || _session.Paused)
             {
-                Arrive(reservation, !_disposed);
+                Arrive(reservation, !_disposed && !_cleared);
                 return;
             }
             var screen = (Vector2)cam.WorldToScreenPoint(new Vector3(from.x, from.y, 0f));
@@ -220,6 +235,29 @@ namespace Sidescroller
                 CommitAll(true);
         }
 
+        /// <summary>通關：飛行中的立刻放進背包，標籤收掉，背包圖示淡出（通關畫面上不留 HUD）。</summary>
+        private void OnStageCleared(float seconds)
+        {
+            if (_cleared || _disposed)
+                return;
+            CommitAll(false);
+            _cleared = true;
+            _hideLeft = HideTime;
+            _labelLeft = 0f;
+            _labelParts = 0;
+            _label.gameObject.SetActive(false);
+        }
+
+        private void TickHide(float udt)
+        {
+            if (!_cleared || !BagIcon.gameObject.activeSelf)
+                return;
+            _hideLeft = Mathf.Max(0f, _hideLeft - udt);
+            _bagGroup.alpha = _hideLeft / HideTime;
+            if (_hideLeft <= 0f)
+                BagIcon.gameObject.SetActive(false);
+        }
+
         /// <summary>飛行中的全部立刻放進背包（暫停、Dispose）。</summary>
         private void CommitAll(bool feedback)
         {
@@ -239,7 +277,10 @@ namespace Sidescroller
             CommitAll(false);
             _disposed = true;
             if (_session != null)
+            {
                 _session.PausedChanged -= OnPausedChanged;
+                _session.StageCleared -= OnStageCleared;
+            }
         }
 
         private static Camera FindCamera()
@@ -255,7 +296,7 @@ namespace Sidescroller
         /// <summary>背包放不下：圖示閃紅並顯示「背包已滿」。短時間內重複呼叫只算一次。</summary>
         internal void ShowFull()
         {
-            if (_disposed)
+            if (_disposed || _cleared)
                 return;
             var now = Time.unscaledTime;
             if (now - _lastFullAt < FullCooldown)
@@ -268,10 +309,10 @@ namespace Sidescroller
 
         private void ShowLabel(string text, Color color)
         {
-            _labelText.text = text;
+            _labelText.text = _labelShadow.text = text;
             _labelText.color = color;
             var width = _labelText.GetPreferredValues(text).x;
-            _label.sizeDelta = new Vector2(width + 40f, _label.sizeDelta.y);
+            _label.sizeDelta = new Vector2(width + 56f, _label.sizeDelta.y);
             _labelLeft = LabelTime;
             _label.gameObject.SetActive(true);
             SetLabelAlpha(1f);
@@ -314,12 +355,7 @@ namespace Sidescroller
             }
         }
 
-        private void SetLabelAlpha(float a)
-        {
-            var c = _labelText.color;
-            _labelText.color = new Color(c.r, c.g, c.b, a);
-            _labelBg.color = new Color(LabelBgColor.r, LabelBgColor.g, LabelBgColor.b, LabelBgColor.a * a);
-        }
+        private void SetLabelAlpha(float a) => _labelGroup.alpha = a;
         #endregion
 
         #region 版面

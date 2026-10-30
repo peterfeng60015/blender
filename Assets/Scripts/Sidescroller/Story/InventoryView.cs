@@ -28,6 +28,8 @@ namespace Sidescroller
         private const float TouchCellMm = 9f, TouchCellMin = 120f, TouchCellMax = 140f;
         private const float MinCell = 60f;
         private const float KeyButtonH = 64f;
+        /// <summary>「關閉」鈕寬度（比緞帶標題小，觸控時高度仍 ≥ 9mm）。</summary>
+        private const float CloseW = 168f;
         private const float TouchButtonMm = 9f, TouchButtonMin = 110f, TouchButtonMax = 140f;
         /// <summary>按住移動超過這個距離（mm；dpi 不可信時用畫布單位）才算拖曳。</summary>
         private const float DragMm = 2.5f, DragFallback = 28f;
@@ -36,9 +38,11 @@ namespace Sidescroller
         private const int Columns = LootState.Columns, Rows = LootState.Rows;
         private const float BadFlashTime = 0.25f;
 
-        private static readonly Color PanelColor = new Color(0.06f, 0.04f, 0.1f, 0.95f);
-        private static readonly Color CellColor = new Color(1f, 1f, 1f, 0.07f);
-        private static readonly Color SlotColor = new Color(1f, 1f, 1f, 0.1f);
+        /// <summary>格子：不透明的深色底＋淡紫細框（看不到後面的場景）。</summary>
+        private static readonly Color CellColor = new Color32(0x17, 0x10, 0x28, 0xFF);
+        private static readonly Color CellEdgeColor = new Color32(0x4A, 0x33, 0x66, 0xFF);
+        private static readonly Color SlotLabelColor = new Color(1f, 0.97f, 0.9f, 0.6f);
+        private static readonly Color HelpColor = new Color(1f, 0.97f, 0.9f, 0.82f);
         private static readonly Color CursorColor = new Color(0.18f, 0.9f, 0.85f, 0.35f);
         private static readonly Color OkColor = new Color(0.3f, 0.95f, 0.45f, 0.35f);
         private static readonly Color BadColor = new Color(0.95f, 0.25f, 0.2f, 0.45f);
@@ -52,7 +56,7 @@ namespace Sidescroller
         #region 畫面物件
         private readonly RectTransform _root;
         private readonly RectTransform _panel;
-        private readonly TextMeshProUGUI _title;
+        private readonly UiPop _pop;
         private readonly RectTransform _grid;
         private readonly RectTransform[] _cells = new RectTransform[Columns * Rows];
         private readonly RectTransform _itemLayer;
@@ -69,6 +73,7 @@ namespace Sidescroller
         private readonly LootTooltip _tooltip;
 
         private readonly RectTransform _confirm;
+        private readonly UiPop _confirmPop;
         private readonly TextMeshProUGUI _confirmText;
         private readonly LootButton _confirmYes;
         private readonly LootButton _confirmNo;
@@ -109,7 +114,7 @@ namespace Sidescroller
         private float _badUntil = -1f;
         #endregion
 
-        public InventoryView(Transform parent, TMP_FontAsset font, GameSession session, LootPointer pointer)
+        public InventoryView(Transform parent, TMP_FontAsset font, GameSession session, LootPointer pointer, UiSkin skin)
         {
             _session = session;
             _loot = session.Loot;
@@ -117,24 +122,17 @@ namespace Sidescroller
             _pointer = pointer;
 
             _root = SsUiKit.Fill("Inventory", parent);
-            SsUiKit.AddImage(_root, new Color(0.02f, 0.01f, 0.05f, 0.55f));
-            _panel = SsUiKit.Rect("Panel", _root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            SsUiKit.AddImage(_panel, PanelColor);
-
-            var titleRt = SsUiKit.Rect("Title", _panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
-            titleRt.anchoredPosition = new Vector2(Pad, -Pad + 6f);
-            titleRt.sizeDelta = new Vector2(400f, 70f);
-            _title = SsUiKit.AddText(titleRt, font, 52f, SsUiKit.Gold, TextAlignmentOptions.Left);
-            _title.text = StoryTexts.BagTitle;
+            _panel = LootFrame.Panel(_root, skin, out _pop);
+            LootFrame.Ribbon(_panel, skin, font, StoryTexts.BagTitle, 56f);
 
             for (var i = 0; i < 3; i++)
             {
                 _slots[i] = SsUiKit.Rect($"Slot{i}", _panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
-                SsUiKit.AddImage(_slots[i], SlotColor);
+                skin.Add(_slots[i], UiSkin.ButtonOff, 0.35f);
                 var labelRt = SsUiKit.Fill("Label", _slots[i]);
-                labelRt.offsetMin = new Vector2(10f, 6f);
-                labelRt.offsetMax = new Vector2(-8f, -6f);
-                _slotLabels[i] = SsUiKit.AddText(labelRt, font, 26f, new Color(1f, 1f, 1f, 0.45f), TextAlignmentOptions.TopLeft);
+                labelRt.offsetMin = new Vector2(16f, 8f);
+                labelRt.offsetMax = new Vector2(-12f, -10f);
+                _slotLabels[i] = SsUiKit.AddText(labelRt, font, 28f, SlotLabelColor, TextAlignmentOptions.TopLeft);
                 _slotLabels[i].text = SlotNames[i];
                 _slotWidgets[i] = new ItemWidget("Equipped", _slots[i], font);
                 _slotWidgets[i].Visible = false;
@@ -146,7 +144,11 @@ namespace Sidescroller
                 for (var x = 0; x < Columns; x++)
                 {
                     var cell = SsUiKit.Rect($"Cell{x}_{y}", _grid, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
-                    SsUiKit.AddImage(cell, CellColor);
+                    SsUiKit.AddImage(cell, CellEdgeColor);
+                    var inner = SsUiKit.Fill("Inner", cell);
+                    inner.offsetMin = new Vector2(2f, 2f);
+                    inner.offsetMax = new Vector2(-2f, -2f);
+                    SsUiKit.AddImage(inner, CellColor);
                     _cells[y * Columns + x] = cell;
                 }
             }
@@ -157,27 +159,26 @@ namespace Sidescroller
 
             var partsRt = SsUiKit.Rect("Parts", _panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
             _parts = SsUiKit.AddText(partsRt, font, 38f, SsUiKit.Paper, TextAlignmentOptions.Left);
+            _parts.richText = true;
             var helpRt = SsUiKit.Rect("Help", _panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
-            _help = SsUiKit.AddText(helpRt, font, 28f, new Color(1f, 1f, 1f, 0.6f), TextAlignmentOptions.Left);
+            _help = SsUiKit.AddText(helpRt, font, 28f, HelpColor, TextAlignmentOptions.Left);
             _help.textWrappingMode = TextWrappingModes.NoWrap;
-            _close = new LootButton("Close", _panel, font, StoryTexts.Close, 38f);
+            _close = new LootButton("Close", _panel, font, StoryTexts.Close, 34f, skin);
 
             _heldWidget = new ItemWidget("Held", _root, font);
             _heldWidget.Visible = false;
-            _tooltip = new LootTooltip(_root, font);
+            _tooltip = new LootTooltip(_root, font, skin);
 
             #region 丟掉的確認框
             _confirm = SsUiKit.Fill("Confirm", _root);
-            SsUiKit.AddImage(_confirm, new Color(0f, 0f, 0f, 0.55f));
-            var box = SsUiKit.Rect("Box", _confirm, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+            var box = LootFrame.Panel(_confirm, skin, out _confirmPop);
             box.sizeDelta = new Vector2(900f, 340f);
-            SsUiKit.AddImage(box, new Color(0.08f, 0.05f, 0.13f, 0.98f));
             var textRt = SsUiKit.Rect("Text", box, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f));
             textRt.anchoredPosition = new Vector2(0f, -40f);
             textRt.sizeDelta = new Vector2(-80f, 120f);
             _confirmText = SsUiKit.AddText(textRt, font, 44f, SsUiKit.Paper);
-            _confirmYes = new LootButton("Yes", box, font, StoryTexts.DropYes, 42f);
-            _confirmNo = new LootButton("No", box, font, StoryTexts.DropNo, 42f);
+            _confirmYes = new LootButton("Yes", box, font, StoryTexts.DropYes, 42f, skin);
+            _confirmNo = new LootButton("No", box, font, StoryTexts.DropNo, 42f, skin);
             _confirm.gameObject.SetActive(false);
             #endregion
 
@@ -211,6 +212,7 @@ namespace Sidescroller
             Layout(true);
             Refresh();
             Draw();
+            _pop.Play();
         }
 
         /// <summary>收起：手上的道具放回原位 → AddAnywhere → 丟到地上。</summary>
@@ -237,6 +239,9 @@ namespace Sidescroller
         /// <summary>每幀呼叫（開著時）；回 false＝要求關閉（呼叫端呼叫 <see cref="Close"/>）。</summary>
         public bool Tick()
         {
+            var udt = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
+            _pop.Tick(udt);
+            _confirmPop.Tick(udt);
             Layout(false);
             if (_dirty)
                 Refresh();
@@ -506,6 +511,7 @@ namespace Sidescroller
             _confirmSel = 1;    // 預設「取消」
             _confirmText.text = StoryTexts.DropAskPrefix + _held.DisplayName + StoryTexts.DropAskSuffix;
             _confirm.gameObject.SetActive(true);
+            _confirmPop.Play();
             _dragArmed = _dragging = false;
         }
 
@@ -711,8 +717,10 @@ namespace Sidescroller
             var titleH = Mathf.Max(70f, buttonH + 8f);
             var target = touch ? Mathf.Clamp(Mathf.Max(SsUiKit.MmToUnits(TouchCellMm), TouchCellMin), KeyCell, TouchCellMax) : KeyCell;
             var fixedW = Pad * 2f + Gap;
+            // 上方另外留給露出面板的半截緞帶標題
             var fixedH = Pad * 2f + titleH + FooterH + HelpH + 12f;
-            var cell = Mathf.Min(target, (size.x - 24f - fixedW) / (Columns + EquipCols), (size.y - 16f - fixedH) / Rows);
+            var ribbonH = (LootFrame.RibbonH / 2f - LootFrame.RibbonInset) * 2f;
+            var cell = Mathf.Min(target, (size.x - 24f - fixedW) / (Columns + EquipCols), (size.y - 16f - ribbonH - fixedH) / Rows);
             _cell = Mathf.Max(MinCell, Mathf.Floor(cell));
 
             var panelW = fixedW + (Columns + EquipCols) * _cell;
@@ -748,8 +756,7 @@ namespace Sidescroller
             _help.enableAutoSizing = true;
             _help.fontSizeMax = 28f;
             _help.fontSizeMin = 18f;
-            _title.rectTransform.sizeDelta = new Vector2(400f, titleH - 8f);
-            _close.Place(new Vector2(panelW - Pad - 200f, -Pad + 4f), new Vector2(200f, buttonH));
+            _close.Place(new Vector2(panelW - Pad - CloseW, -Pad + 4f), new Vector2(CloseW, buttonH));
             _dirty = true;
         }
 
@@ -790,7 +797,7 @@ namespace Sidescroller
                 widget.Rt.anchoredPosition = Vector2.zero;
                 widget.Rt.sizeDelta = new Vector2(item.Width * scale, item.Height * scale);
             }
-            _parts.text = StoryTexts.BagParts + _loot.PartsTotal;
+            _parts.text = StoryTexts.BagParts + "<color=#FFC83A>" + _loot.PartsTotal + "</color>";
         }
 
         /// <summary>游標、手上的道具、說明框。</summary>

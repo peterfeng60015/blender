@@ -80,18 +80,29 @@ namespace Sidescroller
         }
     }
 
-    /// <summary>字卡：畫面中央的橫條大字，淡入、停留、淡出，總長＝time。畫在遮罩之上。新字卡直接取代舊的。</summary>
+    /// <summary>
+    /// 字卡：畫面中央的橫條大字（描邊＋陰影），總長＝time。進場時橫條由中間往上下撐開、字從右邊滑入，退場時字往左滑出、整條淡出。
+    /// 畫在遮罩之上。新字卡直接取代舊的。
+    /// </summary>
     public sealed class BannerView
     {
+        /// <summary>進場、退場各最多幾秒（time 太短時各占 1/4）。</summary>
+        private const float EdgeMax = 0.35f;
+        /// <summary>字滑入、滑出的距離（畫布單位）。</summary>
+        private const float Slide = 160f;
+
         private readonly RectTransform _root;
         private readonly CanvasGroup _group;
-        private readonly TextMeshProUGUI _text;
+        private readonly RectTransform _band;
+        private readonly RectTransform _textRt;
+        /// <summary>字的本體、外框、陰影（同一段字的多份）。</summary>
+        private readonly TextMeshProUGUI[] _texts;
         private float _time;
         private float _elapsed;
 
         public bool Visible => _root.gameObject.activeSelf;
 
-        public BannerView(Transform parent, TMP_FontAsset font)
+        public BannerView(Transform parent, TMP_FontAsset font, UiSkin skin)
         {
             _root = SsUiKit.Rect("Banner", parent, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f), new Vector2(0.5f, 0.5f));
             _root.sizeDelta = new Vector2(0f, 170f);
@@ -99,22 +110,24 @@ namespace Sidescroller
             _group = _root.gameObject.AddComponent<CanvasGroup>();
             _group.blocksRaycasts = false;
             _group.interactable = false;
-            SsUiKit.AddImage(_root, new Color(0.05f, 0.03f, 0.1f, 0.78f));
-            var top = SsUiKit.Rect("LineTop", _root, new Vector2(0f, 1f), Vector2.one, new Vector2(0.5f, 1f));
+            _band = SsUiKit.Fill("Band", _root);
+            SsUiKit.AddImage(_band, new Color(0.05f, 0.03f, 0.1f, 0.82f));
+            var top = SsUiKit.Rect("LineTop", _band, new Vector2(0f, 1f), Vector2.one, new Vector2(0.5f, 1f));
             top.sizeDelta = new Vector2(0f, 5f);
-            SsUiKit.AddImage(top, SsUiKit.Orange);
-            var bottom = SsUiKit.Rect("LineBottom", _root, Vector2.zero, new Vector2(1f, 0f), new Vector2(0.5f, 0f));
+            SsUiKit.AddImage(top, SsUiKit.Gold);
+            var bottom = SsUiKit.Rect("LineBottom", _band, Vector2.zero, new Vector2(1f, 0f), new Vector2(0.5f, 0f));
             bottom.sizeDelta = new Vector2(0f, 5f);
             SsUiKit.AddImage(bottom, SsUiKit.Magenta);
-            var textRt = SsUiKit.Fill("Text", _root);
-            _text = SsUiKit.AddText(textRt, font, 72f, SsUiKit.Gold);
-            _text.characterSpacing = 6f;
+            _textRt = SsUiKit.Rect("Text", _root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f));
+            skin.Title(_textRt, font, 76f, SsUiKit.Gold, string.Empty, 6f, 6f, 4f);
+            _texts = _textRt.GetComponentsInChildren<TextMeshProUGUI>();
             _root.gameObject.SetActive(false);
         }
 
         public void Show(string text, float time)
         {
-            _text.text = text ?? string.Empty;
+            foreach (var t in _texts)
+                t.text = text ?? string.Empty;
             _time = Mathf.Max(0.01f, time);
             _elapsed = 0f;
             _root.gameObject.SetActive(true);
@@ -143,11 +156,19 @@ namespace Sidescroller
 
         private void Apply()
         {
-            var edge = Mathf.Min(0.25f, _time / 4f);
-            var a = Mathf.Min(Mathf.Clamp01(_elapsed / edge), Mathf.Clamp01((_time - _elapsed) / edge));
-            _group.alpha = a;
-            var s = 0.92f + 0.08f * Mathf.Clamp01(_elapsed / edge);
-            _root.localScale = new Vector3(1f, s, 1f);
+            var edge = Mathf.Min(EdgeMax, _time / 4f);
+            var enter = EaseOutCubic(Mathf.Clamp01(_elapsed / edge));
+            var exit = EaseOutCubic(Mathf.Clamp01((_time - _elapsed) / edge));
+            _group.alpha = Mathf.Min(Mathf.Clamp01(_elapsed / edge * 1.5f), exit);
+            _band.localScale = new Vector3(1f, Mathf.Lerp(0.2f, 1f, enter), 1f);
+            // 進場：從右邊 Slide 滑到中間；退場：從中間滑到左邊 Slide
+            _textRt.anchoredPosition = new Vector2((1f - enter) * Slide - (1f - exit) * Slide, 0f);
+        }
+
+        private static float EaseOutCubic(float t)
+        {
+            var u = 1f - t;
+            return 1f - u * u * u;
         }
     }
 }

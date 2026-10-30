@@ -207,14 +207,14 @@ namespace Sidescroller
             _skin = new UiSkin();
             var canvas = SsUiKit.CreateCanvas("StoryCanvas", CanvasOrder, transform);
             var root = canvas.transform;
-            Hud = new HudView(root, _font, session);
-            LootHud = new LootHudView(root, _font, session);
+            Hud = new HudView(root, _font, session, _skin);
+            LootHud = new LootHudView(root, _font, session, _skin);
             Touch = new TouchControlsView(root, _font, session, this);
             Dialogue = new DialogueView(root, _font, _skin);
             Fade = new FadeView(root);
-            Banner = new BannerView(root, _font);
+            Banner = new BannerView(root, _font, _skin);
             BuildClearScreen(root);
-            LootScreens = new LootScreens(root, _font, session, this);
+            LootScreens = new LootScreens(root, _font, session, this, _skin);
             BuildPauseMenu(root);
             _rotate = new RotateHintView(root, _font, StoryTexts.RotateSub, _skin);
             Fade.SetImmediate(1f, false);

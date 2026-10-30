@@ -114,25 +114,78 @@ namespace Sidescroller
     }
     #endregion
 
+    #region 面板外框
+    /// <summary>背包、強化、丟掉確認共用的面板外框：全螢幕暗底、置中的面板（陰影＋外框）、面板上緣的緞帶標題。</summary>
+    internal static class LootFrame
+    {
+        private static readonly Color BackdropColor = new Color(0.03f, 0.02f, 0.07f, 0.72f);
+        /// <summary>進場動畫（縮放＋淡入）的長度（秒，unscaled）。</summary>
+        public const float PopTime = 0.2f;
+        /// <summary>緞帶中心在面板上緣往下多少（畫布單位）；緞帶上半截露出面板外。</summary>
+        public const float RibbonInset = 18f;
+        public const float RibbonH = 112f;
+
+        /// <summary>
+        /// 在 root（撐滿）加暗底，回傳置中的面板（大小由呼叫端設）。面板放在 window 底下，pop 播放時整組縮放淡入；
+        /// 面板自己沒有 Image，外框是第一個子物件（之後加的子物件畫在外框上面）。
+        /// </summary>
+        public static RectTransform Panel(RectTransform root, UiSkin skin, out UiPop pop)
+        {
+            SsUiKit.AddImage(root, BackdropColor);
+            var window = SsUiKit.Fill("Window", root);
+            pop = new UiPop(window, PopTime) { From = 0.9f };
+            var panel = SsUiKit.Rect("Panel", window, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+            var shadow = SsUiKit.Fill("Shadow", panel);
+            shadow.offsetMin = new Vector2(-20f, -36f);
+            shadow.offsetMax = new Vector2(32f, 4f);
+            skin.Add(shadow, UiSkin.Shadow, 0.8f);
+            skin.Add(SsUiKit.Fill("Frame", panel), UiSkin.Panel, 0.6f);
+            return panel;
+        }
+
+        /// <summary>面板上緣置中的緞帶標題（寬度跟著字長）。</summary>
+        public static RectTransform Ribbon(RectTransform panel, UiSkin skin, TMP_FontAsset font, string text, float size)
+        {
+            var ribbon = SsUiKit.Rect("Ribbon", panel, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f));
+            ribbon.anchoredPosition = new Vector2(0f, -RibbonInset);
+            skin.Add(ribbon, UiSkin.Ribbon, 0.5f);
+            var titleRt = SsUiKit.Fill("Title", ribbon);
+            titleRt.anchoredPosition = new Vector2(0f, 4f);
+            var title = skin.Title(titleRt, font, size, SsUiKit.Paper, text, 4f, 2f, 3.5f);
+            ribbon.sizeDelta = new Vector2(title.GetPreferredValues(text).x + 220f, RibbonH);
+            return ribbon;
+        }
+    }
+    #endregion
+
     #region 按鈕
-    /// <summary>矩形按鈕（底色＋文字）；點擊由呼叫端用 <see cref="Contains"/> 判斷（不建 EventSystem）。</summary>
+    /// <summary>
+    /// 按鈕（<see cref="UiSkin"/> 外框＋有陰影的字）；點擊由呼叫端用 <see cref="Contains"/> 判斷（不建 EventSystem）。
+    /// 選中用 ButtonOn（橘粉漸層）、其他用 ButtonOff（深紫）；停用時外框與字都變淡。
+    /// </summary>
     internal sealed class LootButton
     {
-        public static readonly Color IdleColor = new Color(1f, 1f, 1f, 0.1f);
-        public static readonly Color DisabledColor = new Color(1f, 1f, 1f, 0.04f);
+        /// <summary>外框素材 1 px 在畫布上的大小。</summary>
+        private const float SkinScale = 0.4f;
+        private static readonly Color DisabledTint = new Color(1f, 1f, 1f, 0.4f);
 
         public readonly RectTransform Rt;
         public readonly Image Bg;
         public readonly TextMeshProUGUI Label;
+        private readonly TextMeshProUGUI _shadow;
+        private readonly UiSkin _skin;
+        /// <summary>目前外框：0＝未選、1＝選中、2＝停用；-1＝還沒設定。</summary>
+        private int _look = -1;
 
-        public LootButton(string name, Transform parent, TMP_FontAsset font, string text, float fontSize)
+        public LootButton(string name, Transform parent, TMP_FontAsset font, string text, float fontSize, UiSkin skin)
         {
+            _skin = skin;
             Rt = SsUiKit.Rect(name, parent, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));
-            Bg = SsUiKit.AddImage(Rt, IdleColor);
+            Bg = skin.Add(Rt, UiSkin.ButtonOff, SkinScale);
             var labelRt = SsUiKit.Fill("Label", Rt);
-            Label = SsUiKit.AddText(labelRt, font, fontSize, SsUiKit.Paper);
-            Label.textWrappingMode = TextWrappingModes.NoWrap;
-            Label.text = text;
+            (Label, _shadow) = UiSkin.Label(labelRt, font, fontSize, SsUiKit.Paper);
+            SetText(text);
+            SetState(false);
         }
 
         public bool Visible
@@ -143,6 +196,46 @@ namespace Sidescroller
                 if (Rt.gameObject.activeSelf != value)
                     Rt.gameObject.SetActive(value);
             }
+        }
+
+        /// <summary>改字（陰影一起改）。</summary>
+        public void SetText(string text)
+        {
+            if (Label.text == text)
+                return;
+            Label.text = text;
+            _shadow.text = text;
+        }
+
+        /// <summary>字的大小、自動縮放與對齊（陰影一起改）。</summary>
+        public void SetFont(float max, float min, TextAlignmentOptions align = TextAlignmentOptions.Center)
+        {
+            foreach (var t in new[] { Label, _shadow })
+            {
+                t.fontSize = max;
+                t.enableAutoSizing = min < max;
+                t.fontSizeMax = max;
+                t.fontSizeMin = min;
+                t.alignment = align;
+            }
+        }
+
+        /// <summary>字的左右內距（陰影一起改）。</summary>
+        public void SetPadding(float left, float right)
+        {
+            foreach (var t in new[] { Label, _shadow })
+            {
+                var rt = t.rectTransform;
+                rt.offsetMin = new Vector2(left, rt.offsetMin.y);
+                rt.offsetMax = new Vector2(-right, rt.offsetMax.y);
+            }
+        }
+
+        /// <summary>字太長時結尾用「…」（陰影一起改）。</summary>
+        public void SetEllipsis()
+        {
+            Label.overflowMode = TextOverflowModes.Ellipsis;
+            _shadow.overflowMode = TextOverflowModes.Ellipsis;
         }
 
         /// <summary>點擊判定（上下左右各多算 pad 個畫布單位，手指比較好按）。</summary>
@@ -166,15 +259,24 @@ namespace Sidescroller
             Rt.sizeDelta = size;
         }
 
-        /// <summary>selected：鍵盤選到（品紅底）；enabled＝false 時變淡。</summary>
-        public void SetState(bool selected, bool enabled = true)
+        /// <summary>selected：鍵盤選到（ButtonOn）；enabled＝false 時變淡。字色用預設（白／米白）。</summary>
+        public void SetState(bool selected, bool enabled = true) =>
+            SetState(selected, enabled, enabled ? (selected ? Color.white : SsUiKit.Paper) : new Color(1f, 1f, 1f, 0.35f));
+
+        /// <summary>同上，但字色由呼叫端指定（例如稀有度顏色）。</summary>
+        public void SetState(bool selected, bool enabled, Color labelColor)
         {
-            var bg = !enabled ? DisabledColor : selected ? SsUiKit.Magenta : IdleColor;
-            if (Bg.color != bg)
-                Bg.color = bg;
-            var fg = enabled ? (selected ? Color.white : SsUiKit.Paper) : new Color(1f, 1f, 1f, 0.35f);
-            if (Label.color != fg)
-                Label.color = fg;
+            var look = !enabled ? 2 : selected ? 1 : 0;
+            if (look != _look)
+            {
+                _look = look;
+                _skin.Set(Bg, look == 1 ? UiSkin.ButtonOn : UiSkin.ButtonOff, SkinScale, look == 2 ? DisabledTint : (Color?)null);
+            }
+            if (Label.color != labelColor)
+                Label.color = labelColor;
+            var shadow = new Color(_shadow.color.r, _shadow.color.g, _shadow.color.b, enabled ? 0.7f : 0.25f);
+            if (_shadow.color != shadow)
+                _shadow.color = shadow;
         }
     }
     #endregion
@@ -262,7 +364,7 @@ namespace Sidescroller
     internal sealed class LootTooltip
     {
         private const float Width = 440f;
-        private const float Margin = 14f;
+        private const float Margin = 18f;
         private const float Gap = 10f;
 
         private readonly RectTransform _root;
@@ -274,23 +376,19 @@ namespace Sidescroller
         /// <summary>LocalRect 的暫存（只在主執行緒、呼叫內使用，不保留狀態）。</summary>
         private static readonly Vector3[] Corners = new Vector3[4];
 
-        public LootTooltip(RectTransform root, TMP_FontAsset font)
+        public LootTooltip(RectTransform root, TMP_FontAsset font, UiSkin skin)
         {
             _root = root;
-            _main = Box("Tooltip", font, out _mainText);
-            _other = Box("Compare", font, out _otherText);
+            _main = Box("Tooltip", font, skin, out _mainText);
+            _other = Box("Compare", font, skin, out _otherText);
             Hide();
         }
 
-        private RectTransform Box(string name, TMP_FontAsset font, out TextMeshProUGUI text)
+        private RectTransform Box(string name, TMP_FontAsset font, UiSkin skin, out TextMeshProUGUI text)
         {
-            // 外框（淡色）當底，裡面再蓋一層深色底：子物件畫在父物件上面
+            // 面板外框縮小當說明框底（不透明，疊在格子上也讀得清楚）
             var rt = SsUiKit.Rect(name, _root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 1f));
-            SsUiKit.AddImage(rt, new Color(0.55f, 0.52f, 0.62f, 1f));
-            var inner = SsUiKit.Fill("Bg", rt);
-            inner.offsetMin = new Vector2(3f, 3f);
-            inner.offsetMax = new Vector2(-3f, -3f);
-            SsUiKit.AddImage(inner, new Color(0.03f, 0.02f, 0.06f, 0.97f));
+            skin.Add(rt, UiSkin.Panel, 0.3f);
             var textRt = SsUiKit.Fill("Text", rt);
             textRt.offsetMin = new Vector2(Margin + 6f, Margin);
             textRt.offsetMax = new Vector2(-Margin, -Margin);
