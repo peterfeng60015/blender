@@ -37,9 +37,13 @@ namespace Sidescroller
             public readonly PivotKind Pivot;
             /// <summary>多變化素材：每幀的佔位色深淺不同。</summary>
             public readonly bool Variants;
+            /// <summary>有 _sprites.json（Blender 與 sheet 素材）；單張圖（選單主視覺）沒有，不去讀。</summary>
+            public readonly bool HasManifest;
 
-            public Entry(string name, Vector2 size, Color color, PivotKind pivot, bool variants, string[] actions, int[] frames)
+            public Entry(string name, Vector2 size, Color color, PivotKind pivot, bool variants, string[] actions, int[] frames,
+                bool hasManifest = true)
             {
+                HasManifest = hasManifest;
                 Name = name;
                 Size = size;
                 Color = color;
@@ -55,6 +59,10 @@ namespace Sidescroller
 
         private static Entry Var(string name, float w, float h, Color color, PivotKind pivot, string action, int count) =>
             new Entry(name, new Vector2(w, h), color, pivot, true, new[] { action }, new[] { count });
+
+        /// <summary>單張圖（Tools/ComfyUI 輸出的選單主視覺）：location＝{name}_Idle，沒有 _sprites.json。</summary>
+        private static Entry Single(string name, float w, float h, Color color, PivotKind pivot) =>
+            new Entry(name, new Vector2(w, h), color, pivot, true, new[] { "Idle" }, new[] { 1 }, false);
 
         private static readonly string[] HeroActions = { "Idle", "Run", "Jump", "Melee", "Shoot", "Hurt" };
         private static readonly int[] HeroFrames = { 6, 8, 6, 5, 4, 3 };
@@ -81,6 +89,9 @@ namespace Sidescroller
             Var("SsUi", 1f, 1f, new Color(1f, 0.55f, 0.75f), PivotKind.Center, "Idle", 8),
             Var("SsUiSkin", 4f, 4f, new Color(0.88f, 0.27f, 0.48f), PivotKind.Center, "Idle", 10),
             Var("SsTouchUi", 4f, 4f, new Color(0.17f, 0.11f, 0.29f), PivotKind.Center, "Idle", 11),
+            Single("SsMenuBg", 37.5f, 16.875f, new Color(0.36f, 0.23f, 0.48f), PivotKind.Center),
+            Single("SsMenuHero", 15.6f, 18.75f, new Color(0.85f, 0.2f, 0.17f), PivotKind.Feet),
+            Single("SsMenuLogoBg", 17.2f, 6.25f, new Color(0.88f, 0.27f, 0.48f), PivotKind.Center),
             Var("SsPortraitHero", 4f, 4f, new Color(0.85f, 0.2f, 0.17f), PivotKind.Center, "Face", 4),
             Var("SsPortraitBoss", 4f, 4f, new Color(0.54f, 0.3f, 0.7f), PivotKind.Center, "Face", 4),
             Var("SsPortraitMentor", 4f, 4f, new Color(0.25f, 0.65f, 0.3f), PivotKind.Center, "Face", 4),
@@ -124,7 +135,7 @@ namespace Sidescroller
             foreach (var entry in Catalog)
             {
                 var fps = 0f;
-                var json = await TryLoadTextAsync(entry.Name + "_sprites", ready, generation, ct);
+                var json = entry.HasManifest ? await TryLoadTextAsync(entry.Name + "_sprites", ready, generation, ct) : null;
                 if (generation != _generation)
                     throw new OperationCanceledException("[Sidescroller.SsArt] 讀取中途被 ResetCache");
                 if (json != null)

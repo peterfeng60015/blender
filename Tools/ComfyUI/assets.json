@@ -76,7 +76,7 @@
       "seed": 2101,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a round mobile game action button base, perfect circle, dark night violet glossy face, thick hot magenta outer ring with tangerine inner ring, soft highlight arc on the top, front view, flat, empty center"
+      "prompt": "UI element: a round mobile game action button base, perfect circle, semi-transparent deep violet face with a slightly brighter radial center, thick warm gold outer ring, thin dark purple outline outside the gold ring, thin hot magenta inner ring, front view, flat, empty center"
     },
     {
       "id": "stick_base",
@@ -84,7 +84,7 @@
       "seed": 2202,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a round virtual joystick base pad for a mobile game, perfect circle, dark translucent violet, four small tangerine arrow notches pointing up down left right at the rim, thin hot magenta ring, front view, flat"
+      "prompt": "UI element: a round virtual joystick base pad, perfect circle, very dark translucent violet face, thin warm gold ring with a thin hot magenta inner ring, four small cream white triangles at the rim pointing up, down, left and right, empty center, front view, flat"
     },
     {
       "id": "stick_knob",
@@ -92,7 +92,7 @@
       "seed": 2303,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a round glossy joystick thumb knob, perfect circle, tangerine to hot magenta radial gradient, cream white rim, shiny highlight, front view, flat"
+      "prompt": "UI element: a round glossy joystick thumb knob, perfect circle, warm gradient from cream at the top left to hot magenta at the bottom right, cream rim, small soft shadow under it, front view, flat"
     },
     {
       "id": "icon_jump",
@@ -100,7 +100,7 @@
       "seed": 2404,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a bold game icon of a thick upward arrow with two speed lines under it, cream white fill with dark violet outline, sticker style, front view"
+      "prompt": "UI element: a bold game icon of a double upward chevron arrow, cream white fill, front view, simple shape"
     },
     {
       "id": "icon_melee",
@@ -108,7 +108,7 @@
       "seed": 2505,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a bold game icon of a brown leather courier messenger bag being swung with a curved motion swoosh, cream white and tangerine accents, dark violet outline, sticker style, front view"
+      "prompt": "UI element: a bold game icon of a brown leather briefcase messenger bag with a swing motion swoosh, cream and tangerine accents, front view, simple shape"
     },
     {
       "id": "icon_shoot",
@@ -116,7 +116,7 @@
       "seed": 2606,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a bold game icon of a wooden Y-shaped slingshot launching a small cardboard parcel box, cream white and tangerine accents, dark violet outline, sticker style, front view"
+      "prompt": "UI element: a bold game icon of a wooden Y-shaped slingshot with a stretched band, cream and tangerine accents, front view, simple shape"
     },
     {
       "id": "icon_roll",
@@ -124,7 +124,7 @@
       "seed": 2707,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a bold game icon of an armadillo rolled into a ball shell with circular spin motion lines, tan and tangerine shell bands, dark violet outline, sticker style, front view"
+      "prompt": "UI element: a bold game icon of a round armadillo shell ball with curved spin motion lines, tan and tangerine bands, front view, simple shape"
     },
     {
       "id": "icon_enhance",
@@ -132,7 +132,7 @@
       "seed": 2808,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a bold game icon of a wrench crossed with an upward plus arrow and small gears, gold and cream white, dark violet outline, sticker style, front view"
+      "prompt": "UI element: a bold game icon of a wrench with an upward arrow and a small gear, gold and cream white, front view, simple shape"
     },
     {
       "id": "icon_switch",
@@ -140,7 +140,7 @@
       "seed": 2909,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a bold game icon of a courier uniform shirt with two circular swap arrows around it, tangerine and cream white, dark violet outline, sticker style, front view"
+      "prompt": "UI element: a bold game icon of a red courier cap with two circular swap arrows around it, cream white arrows, front view, simple shape"
     },
     {
       "id": "icon_pause",
@@ -148,18 +148,52 @@
       "seed": 3010,
       "width": 1024,
       "height": 1024,
-      "prompt": "UI element: a bold game icon of a pause symbol, two thick rounded vertical bars, cream white fill with dark violet outline, sticker style, front view"
+      "prompt": "UI element: a bold game icon of a pause symbol, two thick rounded vertical bars, cream white fill, front view, simple shape"
     },
     {
       "id": "menu_bg",
       "model": "flux",
       "seed": 4101,
-      "width": 1536,
-      "height": 864,
+      "width": 1600,
+      "height": 720,
       "mask": false,
-      "prompt": "wide game title screen illustration, a city street at sunset during a heat wave, hot magenta and tangerine sky with a huge setting sun and synthwave haze, silhouettes of apartment towers with neon signs, palm trees, a red mailbox and a stack of cardboard delivery parcels on the sidewalk in the foreground, heat shimmer, lots of empty sky in the upper half for the logo, no characters, no people",
+      "prompt": "wide panoramic game title screen background, city skyline at sunset during a heat wave, sky gradient from deep violet at the top through hot magenta to tangerine orange near the horizon, a big glowing yellow sun placed on the right side of the image, apartment towers with neon signs on the right, the left side is a calm and darker simple sky with distant silhouettes, a dark street band along the bottom edge, heat haze, no characters, no people",
+      "style_override": "1990s cel-shaded anime background art, flat colors with hard shading, clean dark purple linework, synthwave color palette of hot magenta, tangerine orange, deep violet and warm gold, high detail, no text, no letters, no watermark",
       "background_override": "",
-      "style_override": "1990s cel-shaded anime background art, flat colors with hard shading, clean dark purple linework, synthwave color palette of hot magenta, tangerine orange, deep violet and warm gold, high detail, no text, no letters, no watermark"
+      "output": {
+        "name": "SsMenuBg",
+        "width": 2400,
+        "height": 1080
+      }
+    },
+    {
+      "id": "menu_hero",
+      "model": "sdxl",
+      "seed": 4202,
+      "width": 832,
+      "height": 1024,
+      "reference": "out/ref/hero_concept.png",
+      "reference_weight": 0.75,
+      "prompt": "full body character illustration of an anthropomorphic armadillo courier, red cap, yellow neckerchief, teal green messenger bag, denim shorts, brown shoes, three-quarter view facing left, confident delivery pose with one hand on the bag strap and the other giving a thumbs up, standing, feet at the bottom of the image",
+      "style_override": "1990s cel-shaded anime character art, flat colors with two-tone hard shading, clean bold dark outlines, vivid colors, high detail, no text, no watermark",
+      "output": {
+        "name": "SsMenuHero",
+        "fit_height": 1200,
+        "align": "bottom"
+      }
+    },
+    {
+      "id": "menu_logo_bg",
+      "model": "flux",
+      "seed": 4303,
+      "width": 1024,
+      "height": 384,
+      "prompt": "UI element: a wide horizontal heat wave emblem backdrop for a game logo, wavy flame-like heat shimmer shapes with radiating light rays, hot magenta and warm gold, empty center",
+      "output": {
+        "name": "SsMenuLogoBg",
+        "width": 1100,
+        "height": 400
+      }
     }
   ]
 }

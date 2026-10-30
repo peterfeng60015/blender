@@ -9,10 +9,11 @@
   2. 裁到內容範圍，依種類對稱化（AI 圖左右、上下不會完全對稱，九宮格的四角要一致）：
      quad＝左上四分之一鏡射到四角（面板、圓盤）；half＝左半鏡射到右半（橫向外框）；none＝不動（圖示）。
   3. 縮放排進 256 px 的格子：方形素材撐滿一格；橫向外框（2:1）放在格子中間 256×128（上下透明）。
-  4. 衍生變化：未選中按鈕（壓暗轉紫）、陰影（面板 alpha 模糊）、按下的觸控底盤（提亮）。
+  4. 衍生變化：未選中按鈕（壓暗轉紫）、陰影（面板 alpha 模糊）、按下的觸控底盤（橘粉漸層＋奶油圈）。
+  5. 觸控圖示加深紫描邊與往下的硬陰影（亮底上也讀得到）。
 
 格子編號、橫向外框在格子裡的位置與九宮格邊界寫在遊戲程式 UiSkin.cs、TouchControlsView.cs；改這裡的排列要一起改。
-選單主視覺另外輸出到 Assets/Art/Sidescroller/Sprites/SsMenuBg/（不切格）。
+選單主視覺（assets.json 有 output 的素材：SsMenuBg、SsMenuHero、SsMenuLogoBg）輸出成單張 PNG，不切格。
 """
 import json
 import os
@@ -27,6 +28,7 @@ REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 SPRITES = os.path.join(REPO, "Assets", "Art", "Sidescroller", "Sprites")
 CELL = 256
 PPU = 64
+STROKE = (0x2A / 255, 0x0F / 255, 0x2E / 255)
 
 # 各 sheet 的格子：(素材 id 或衍生名, 對稱方式, 形狀)；形狀 square＝撐滿一格，wide＝格子中間 256×128
 SKIN = [
@@ -42,10 +44,10 @@ SKIN = [
     ("nameplate", "half", "wide"),
 ]
 TOUCH = [
-    ("touch_disc", "quad", "square"),
-    ("touch_disc_pressed", "quad", "square"),
-    ("stick_base", "quad", "square"),
-    ("stick_knob", "quad", "square"),
+    ("touch_disc", "quad", "disc"),
+    ("touch_disc_pressed", "quad", "disc"),
+    ("stick_base", "quad", "disc"),
+    ("stick_knob", "quad", "disc"),
     ("icon_jump", "none", "icon"),
     ("icon_melee", "none", "icon"),
     ("icon_shoot", "none", "icon"),
@@ -113,9 +115,17 @@ def darken_violet(img):
     return out
 
 
-def brighten(img):
+def pressed(img):
+    """按鈕底盤 → 按下：底改橘→粉直向漸層（和選中按鈕同色），金圈提亮成奶油色。"""
     out = img.copy()
-    out[..., :3] = np.clip(img[..., :3] * 1.25 + np.array([0.12, 0.02, 0.06], dtype=np.float32), 0.0, 1.0)
+    h = img.shape[0]
+    t = np.linspace(0.0, 1.0, h, dtype=np.float32)[:, None, None]
+    grad = np.array([0xFD, 0xB3, 0x6A], np.float32) / 255 * (1 - t) + np.array([0xE2, 0x49, 0x7C], np.float32) / 255 * t
+    lum = img[..., :3] @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+    ring = np.clip((lum - 0.45) / 0.3, 0.0, 1.0)[..., None]
+    cream = np.array([0xFF, 0xF3, 0xC4], np.float32) / 255
+    out[..., :3] = grad * (1 - ring) + cream * ring
+    out[..., 3] = np.maximum(img[..., 3], np.where(img[..., 3] > 0.05, 0.92, 0.0))
     return out
 
 
@@ -134,14 +144,39 @@ def to_cell(img, shape):
         cell[:] = resize(img, CELL, CELL)
     elif shape == "wide":
         cell[64:192] = resize(img, CELL, 128)
+    elif shape == "disc":
+        # 觸控圓盤：撐滿格子、四周留 8 px 透明邊
+        cell[8:CELL - 8, 8:CELL - 8] = resize(img, CELL - 16, CELL - 16)
     else:
-        # 圖示：等比例縮到 224 以內、置中
+        # 圖示：等比例縮到格子約 70%、置中，再加深紫描邊與往下的硬陰影（亮底上也讀得到）
         h, w = img.shape[:2]
-        s = 224.0 / max(h, w)
+        s = 180.0 / max(h, w)
         nw, nh = max(1, round(w * s)), max(1, round(h * s))
-        y, x = (CELL - nh) // 2, (CELL - nw) // 2
-        cell[y:y + nh, x:x + nw] = resize(img, nw, nh)
+        y, x = (CELL - nh) // 2 - 3, (CELL - nw) // 2
+        body = np.zeros((CELL, CELL, 4), np.float32)
+        body[y:y + nh, x:x + nw] = resize(img, nw, nh)
+        cell = outline_and_shadow(body)
     return cell
+
+
+def outline_and_shadow(body, stroke=6, drop=6):
+    """在 body 外面加 stroke px 的深紫描邊，再往下 drop px 疊一層深色硬陰影。"""
+    alpha = Image.fromarray((body[..., 3] * 255).astype(np.uint8))
+    grown = np.asarray(alpha.filter(ImageFilter.MaxFilter(stroke * 2 + 1))).astype(np.float32) / 255.0
+    ink = np.array(STROKE, np.float32)
+    out = np.zeros_like(body)
+    shadow = np.zeros_like(grown)
+    shadow[drop:] = grown[:-drop]
+    out[..., :3] = ink * 0.6
+    out[..., 3] = shadow * 0.55
+    out = over(out, np.dstack([np.broadcast_to(ink, grown.shape + (3,)), grown]))
+    return over(out, body)
+
+
+def over(dst, src):
+    a = src[..., 3:4] + dst[..., 3:4] * (1 - src[..., 3:4])
+    rgb = (src[..., :3] * src[..., 3:4] + dst[..., :3] * dst[..., 3:4] * (1 - src[..., 3:4])) / np.maximum(a, 1e-4)
+    return np.dstack([rgb, a])
 
 
 def build(names):
@@ -160,7 +195,7 @@ def build(names):
             cells.append(shadow_from(to_cell(base("panel", "quad"), "square")))
             continue
         elif name == "touch_disc_pressed":
-            img = brighten(base("touch_disc", mode))
+            img = pressed(base("touch_disc", mode))
         else:
             img = base(name, mode)
         cells.append(to_cell(img, shape))
@@ -193,28 +228,45 @@ def write_sheet(name, sheet):
     print(f"{name}：{columns} 格 → {out_dir}")
 
 
-def write_menu_bg():
-    src = os.path.join(RAW, "menu_bg.png")
-    if not os.path.exists(src):
-        return
-    img = Image.open(src).convert("RGB")
-    # 整張當一格（cellSize＝寬，高度不足的部分補在上方：天空延伸）
-    w, h = img.size
-    canvas = Image.new("RGB", (w, w), img.getpixel((w // 2, 2)))
-    canvas.paste(img, (0, w - h))
-    sheet = np.dstack([np.asarray(canvas).astype(np.float32) / 255.0, np.ones((w, w), np.float32)])
-    global CELL
-    saved, CELL = CELL, w
-    try:
-        write_sheet("SsMenuBg", sheet)
-    finally:
-        CELL = saved
+def write_singles():
+    """assets.json 有 output 的素材輸出成單張 PNG（不切格、沒有 json，匯入時是單張 sprite；location＝<名稱>_Idle）。"""
+    with open(os.path.join(HERE, "assets.json"), encoding="utf-8") as f:
+        spec = json.load(f)
+    for a in spec["assets"]:
+        out = a.get("output")
+        if not out or not os.path.exists(os.path.join(RAW, f"{a['id']}.png")):
+            continue
+        img = load_rgba(a["id"]) if a.get("mask", True) else np.dstack([
+            np.asarray(Image.open(os.path.join(RAW, f"{a['id']}.png")).convert("RGB")).astype(np.float32) / 255.0,
+            np.ones((a["height"], a["width"]), np.float32)])
+        if "fit_height" in out:
+            # 角色：裁到內容、等比例縮到指定高度，腳底貼齊下緣
+            img = crop(img, pad=0)
+            h, w = img.shape[:2]
+            img = resize(img, max(1, round(w * out["fit_height"] / h)), out["fit_height"])
+        else:
+            if a.get("mask", True):
+                img = crop(img)
+            img = resize(img, out["width"], out["height"])
+        name = out["name"]
+        out_dir = os.path.join(SPRITES, name)
+        os.makedirs(out_dir, exist_ok=True)
+        rgba = (np.clip(img, 0.0, 1.0) * 255 + 0.5).astype(np.uint8)
+        Image.fromarray(rgba, "RGBA").save(os.path.join(out_dir, f"{name}_Idle.png"))
+        print(f"{name}：{rgba.shape[1]}×{rgba.shape[0]} → {out_dir}")
 
 
 def main():
-    write_sheet("SsUiSkin", build(SKIN))
-    write_sheet("SsTouchUi", build(TOUCH))
-    write_menu_bg()
+    # 原圖還沒到齊的 sheet 先跳過（生圖是分批的）
+    for name, cells in (("SsUiSkin", SKIN), ("SsTouchUi", TOUCH)):
+        need = {"button" if n == "button_off" else "panel" if n == "shadow" else "touch_disc" if n == "touch_disc_pressed" else n
+                for n, _, _ in cells}
+        missing = sorted(n for n in need if not os.path.exists(os.path.join(RAW, f"{n}.png")))
+        if missing:
+            print(f"{name}：還缺 {', '.join(missing)}，略過")
+            continue
+        write_sheet(name, build(cells))
+    write_singles()
 
 
 if __name__ == "__main__":
