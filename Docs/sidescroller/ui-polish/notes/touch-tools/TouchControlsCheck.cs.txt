@@ -1,0 +1,484 @@
+using System;
+using System.IO;
+using System.Reflection;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
+using UnityEngine.UI;
+
+/// <summary>
+/// 觸控操作層的 batchmode 實測（暫時工具）。
+/// 1. 版面：用多組裝置（解析度、安全區域、dpi）呼叫 TouchControlsView.Compute，檢查按鈕不重疊、不壓背包圖示、在安全區內、≥ 9mm。
+/// 2. 互動：從 Entry 進《熱浪急件》，給全部攻擊與第二套服裝，用模擬的 Touchscreen 送多指觸控，
+///    檢查判定範圍、搖桿、多指同時按、死區、按下回饋；套上 S22 Ultra 與 16:9 的版面拍全部按鈕與按下中的截圖。
+///
+///   Unity -batchmode -projectPath &lt;專案&gt; -executeMethod TouchControlsCheck.RunBatch -captureDir &lt;輸出&gt; -logFile &lt;log&gt;
+/// 全部通過 exit 0，有失敗 exit 1。batchmode 的 Screen 是固定的小視窗，截圖的版面是另外套的。
+/// </summary>
+[InitializeOnLoad]
+public static class TouchControlsCheck
+{
+    private const string ActiveKey = "TouchControlsCheck.Active";
+    private const string DirKey = "TouchControlsCheck.Dir";
+    private const string FailKey = "TouchControlsCheck.Fails";
+    private const string Log = "[TouchControlsCheck] ";
+    private const BindingFlags Any = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+    private const int BJump = 0, BMelee = 1, BShoot = 2, BRoll = 3, BSwitch = 4, BPause = 5, BInteract = 6, ButtonCount = 7;
+    private const float MaxSmall = 190f, MaxAction = 240f, StickZoneWidth = 0.45f, HitScale = 1.15f;
+
+    private sealed class Device
+    {
+        public string Name;
+        public int W, H;
+        public float Dpi;
+        /// <summary>安全區域左、右、下、上的內縮（px）。</summary>
+        public float L, R, B, T;
+        /// <summary>滾殼應該留在跳躍正上方（和舊版同位置）；false＝會壓到右上那群，應該移到外圈。</summary>
+        public bool RollAbove = true;
+        public Rect Safe => new Rect(L, B, W - L - R, H - B - T);
+    }
+
+    private static readonly Device[] Devices =
+    {
+        new Device { Name = "S22 Ultra QHD+", W = 3088, H = 1440, Dpi = 500f, L = 110f },
+        new Device { Name = "S22 Ultra FHD+", W = 2316, H = 1080, Dpi = 375f, L = 80f },
+        new Device { Name = "Pixel 7", W = 2400, H = 1080, Dpi = 416f, L = 118f, RollAbove = false },
+        new Device { Name = "iPhone 14", W = 2532, H = 1170, Dpi = 460f, L = 141f, R = 141f, B = 63f, RollAbove = false },
+        new Device { Name = "小手機 720p", W = 1600, H = 720, Dpi = 270f, RollAbove = false },
+        new Device { Name = "16:9 手機", W = 1920, H = 1080, Dpi = 400f },
+        new Device { Name = "Android 平板", W = 2560, H = 1600, Dpi = 320f },
+        new Device { Name = "iPad", W = 2048, H = 1536, Dpi = 264f },
+        new Device { Name = "桌機 WebGL", W = 1920, H = 1080, Dpi = 96f },
+        new Device { Name = "dpi 不明", W = 1920, H = 1080, Dpi = 0f },
+        new Device { Name = "Mac batch 2316", W = 2316, H = 1080, Dpi = 218f },
+        new Device { Name = "Mac batch 640", W = 640, H = 480, Dpi = 218f, RollAbove = false },
+    };
+
+    /// <summary>截圖用的版面：S22 Ultra（FHD+）、16:9 手機、Pixel 7（滾殼排到外圈）。</summary>
+    private static readonly Device[] ShotDevices = { Devices[1], Devices[5], Devices[2] };
+
+    private static int _phase;
+    private static double _at;
+    private static int _frameAt;
+    private static int _fails;
+    private static Touchscreen _ts;
+    private static Vector2 _stickStart;
+
+    static TouchControlsCheck()
+    {
+        if (SessionState.GetBool(ActiveKey, false))
+            EditorApplication.update += Tick;
+    }
+
+    public static void RunBatch()
+    {
+        var args = Environment.GetCommandLineArgs();
+        var dir = "Temp/TouchShots";
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == "-captureDir")
+                dir = args[i + 1];
+        }
+        Directory.CreateDirectory(dir);
+        _fails = 0;
+        foreach (var d in Devices)
+            CheckLayout(d);
+        SessionState.SetInt(FailKey, _fails);
+        AssetPackageCollectorSetup.Setup();
+        EditorSceneManager.OpenScene("Assets/Scenes/Entry.unity");
+        EditorPrefs.SetBool("Sidescroller.DevBoot", true);
+        SessionState.SetBool(ActiveKey, true);
+        SessionState.SetString(DirKey, Path.GetFullPath(dir));
+        EditorApplication.update += Tick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    /// <summary>Android、WebGL 的 player 腳本編譯（含 #if !UNITY_EDITOR 區塊）；有錯 exit 1。</summary>
+    public static void CompileBatch()
+    {
+        var ok = true;
+        foreach (var (target, group) in new[] { (BuildTarget.Android, BuildTargetGroup.Android), (BuildTarget.WebGL, BuildTargetGroup.WebGL) })
+        {
+            var settings = new UnityEditor.Build.Player.ScriptCompilationSettings { target = target, group = group };
+            var result = UnityEditor.Build.Player.PlayerBuildInterface.CompilePlayerScripts(settings, $"Temp/TouchCompile_{target}");
+            var count = result.assemblies?.Count ?? 0;
+            Debug.Log(Log + $"編譯 {target}：{count} 個組件");
+            ok &= count > 0;
+        }
+        EditorApplication.Exit(ok ? 0 : 1);
+    }
+
+    #region 版面檢查（不進 Play）
+    private static void CheckLayout(Device d)
+    {
+        var layout = Call(GameType("Sidescroller.TouchControlsView"), "Compute", d.W, d.H, d.Safe, d.Dpi);
+        var u = (float)Get(layout, "UnitsToPx");
+        var safeW = (float)Get(layout, "SafeWidth");
+        var safeH = (float)Get(layout, "SafeHeight");
+        var centers = (Vector2[])Get(layout, "Centers");
+        var sizes = (float[])Get(layout, "Sizes");
+        var bag = (Rect)Get(layout, "Bag");
+        // 全部換成右下角為原點（暫停、換裝原本以右上角為原點）
+        var c = new Vector2[ButtonCount];
+        for (var b = 0; b < ButtonCount; b++)
+            c[b] = b == BPause || b == BSwitch ? centers[b] + new Vector2(0f, safeH) : centers[b];
+        var tag = $"{d.Name}（{d.W}×{d.H}、{d.Dpi}dpi）";
+        for (var a = 0; a < ButtonCount; a++)
+        {
+            var r = sizes[a] / 2f;
+            Expect(c[a].x + r <= 0.01f && c[a].x - r >= -safeW - 0.01f && c[a].y - r >= -0.01f && c[a].y + r <= safeH + 0.01f, $"{tag} 按鈕 {a} 在安全區內");
+            for (var b = a + 1; b < ButtonCount; b++)
+            {
+                var dist = (c[a] - c[b]).magnitude;
+                Expect(dist >= r + sizes[b] / 2f, $"{tag} 按鈕 {a}、{b} 不重疊（距離 {dist:0}、半徑和 {r + sizes[b] / 2f:0}）");
+            }
+            var nearest = new Vector2(Mathf.Clamp(c[a].x, bag.xMin, bag.xMax), Mathf.Clamp(c[a].y, bag.yMin, bag.yMax));
+            Expect((c[a] - nearest).magnitude >= r, $"{tag} 按鈕 {a} 不壓背包圖示");
+            if (a != BPause && a != BSwitch && c[a].x - r * HitScale < -safeW * (1f - StickZoneWidth))
+                Debug.LogWarning(Log + $"WARN {tag} 按鈕 {a} 的判定範圍伸進搖桿區（按鈕優先，搖桿區變小）");
+            if (d.Dpi >= 50f && d.Dpi <= 1000f)
+            {
+                var mm = sizes[a] * u / d.Dpi * 25.4f;
+                // 按鈕有畫布單位上限（小鈕 190、大鈕 240，既有規則）：螢幕實體很小時會小於 9mm，只記警告
+                if (mm < 8.99f && sizes[a] >= (a == BPause || a == BSwitch ? MaxSmall : MaxAction) - 0.1f)
+                    Debug.LogWarning(Log + $"WARN {tag} 按鈕 {a} {mm:0.0}mm，受畫布單位上限限制");
+                else
+                    Expect(mm >= 8.99f, $"{tag} 按鈕 {a} ≥ 9mm（{mm:0.0}mm）");
+            }
+        }
+        var above = Mathf.Abs(c[BRoll].x - c[BJump].x) < 0.01f && c[BRoll].y > c[BJump].y;
+        Expect(above == d.RollAbove, $"{tag} 滾殼{(d.RollAbove ? "留在跳躍正上方" : "移到外圈")}（{c[BRoll]}）");
+        Debug.Log(Log + $"{tag} 滾殼 {c[BRoll]}、強化 {c[BInteract]}");
+    }
+    #endregion
+
+    #region 互動（Play）
+    private static void Tick()
+    {
+        if (!EditorApplication.isPlaying)
+            return;
+        var now = EditorApplication.timeSinceStartup;
+        if (_phase == 0)
+        {
+            _fails = SessionState.GetInt(FailKey, 0);
+            _phase = 1;
+            _at = now;
+            return;
+        }
+        if (now - _at > 60)
+        {
+            Fail($"第 {_phase} 步逾時");
+            Finish();
+            return;
+        }
+        SetTouch(true);
+        try
+        {
+            Step(now);
+        }
+        catch (Exception e)
+        {
+            Fail(e.ToString());
+            Finish();
+        }
+    }
+
+    /// <summary>每一步等時間或幀數到了才做下一步（觸控事件要等 Input System 處理過一幀）。</summary>
+    private static void Step(double now)
+    {
+        var frames = Time.frameCount - _frameAt;
+        switch (_phase)
+        {
+            case 1:
+                if (now - _at < 12)
+                    return;
+                SkipCutscene();
+                Next(now);
+                break;
+            case 2:
+                if (now - _at < 4)
+                    return;
+                var loadout = Get(Get(Ui(), "_session"), "Loadout");
+                foreach (var id in Enum.GetValues(GameType("Sidescroller.AttackId")))
+                    Call(loadout, "GrantAttack", id);
+                Call(loadout, "GrantCostume", Enum.ToObject(GameType("Sidescroller.CostumeId"), 1), false);
+                Next(now);
+                break;
+            case 3:
+                if (now - _at < 1)
+                    return;
+                Debug.Log(Log + $"Screen {Screen.width}×{Screen.height} dpi {Screen.dpi} safe {Screen.safeArea}");
+                CheckHits();
+                foreach (var d in ShotDevices)
+                    Capture("all", d);
+                SetupInput();
+                Next(now);
+                break;
+            case 4:
+                // 手指 1 按在搖桿區
+                var safe = Screen.safeArea;
+                _stickStart = new Vector2(safe.xMin + safe.width * 0.2f, safe.yMin + safe.height * 0.3f);
+                Expect(Classify(_stickStart) == -3, "搖桿區判定為 Stick");
+                Touch(1, UnityEngine.InputSystem.TouchPhase.Began, _stickStart);
+                Next(now);
+                break;
+            case 5:
+                if (frames < 2)
+                    return;
+                Touch(1, UnityEngine.InputSystem.TouchPhase.Moved, _stickStart + new Vector2(StickRangePx() * 0.8f, 0f));
+                Next(now);
+                break;
+            case 6:
+                if (frames < 2)
+                    return;
+                Expect(MoveX() > 0.5f, $"搖桿往右推 80% → MoveX=1（實際 {MoveX()}）");
+                // 手指 2、3 同時按跳與彈弓
+                Touch(2, UnityEngine.InputSystem.TouchPhase.Began, Center(BJump));
+                Touch(3, UnityEngine.InputSystem.TouchPhase.Began, Center(BShoot));
+                Next(now);
+                break;
+            case 7:
+                if (frames < 2)
+                    return;
+                Expect(Held(BJump), "多指：跳按住");
+                Expect(Held(BShoot), "多指：彈弓按住");
+                Expect(MoveX() > 0.5f, "多指：搖桿仍然往右");
+                Expect(!Held(BMelee) && !Held(BRoll) && !Held(BPause) && !Held(BSwitch), "多指：其他按鈕沒被誤觸");
+                Next(now);
+                break;
+            case 8:
+                if (now - _at < 0.3)
+                    return;
+                var view = Pad();
+                var visuals = (RectTransform[])Get(view, "_visuals");
+                var bases = (Image[])Get(view, "_bases");
+                var pressed = (Sprite)Get(view, "_pressedSprite");
+                Expect(Mathf.Abs(visuals[BJump].localScale.x - 0.9f) < 0.01f, $"按下回饋：跳的外觀縮到 0.9（實際 {visuals[BJump].localScale.x}）");
+                Expect(bases[BJump].sprite == pressed, "按下回饋：跳換成亮底");
+                Expect(Mathf.Abs(Buttons()[BJump].localScale.x - 1f) < 0.001f, "按下時判定用的 rt 不縮放");
+                Expect(Classify(Edge(BJump, 1.1f)) == BJump, "按住時跳的判定範圍不變（1.1 倍半徑仍算跳）");
+                Expect(Mathf.Abs(visuals[BMelee].localScale.x - 1f) < 0.001f, "沒按的甩包外觀不縮");
+                // 截圖：搖桿、跳、彈弓按住中（套 S22 版面後搖桿畫面位置是 batch 視窗的座標，只看按鈕外觀）
+                Capture("pressed", ShotDevices[0]);
+                Touch(2, UnityEngine.InputSystem.TouchPhase.Ended, Center(BJump));
+                Next(now);
+                break;
+            case 9:
+                if (now - _at < 0.3)
+                    return;
+                var v2 = (RectTransform[])Get(Pad(), "_visuals");
+                Expect(!Held(BJump), "放開：跳不再按住");
+                Expect(Held(BShoot), "放開跳後彈弓仍按住");
+                Expect(Mathf.Abs(v2[BJump].localScale.x - 1f) < 0.001f, "放開：跳的外觀回到 1");
+                Touch(1, UnityEngine.InputSystem.TouchPhase.Ended, _stickStart);
+                Touch(3, UnityEngine.InputSystem.TouchPhase.Ended, Center(BShoot));
+                Next(now);
+                break;
+            case 10:
+                if (frames < 2)
+                    return;
+                Expect(MoveX() == 0f && !Held(BShoot), "全部放開：沒有殘留輸入");
+                // 死區：推 20% 不算移動
+                Touch(4, UnityEngine.InputSystem.TouchPhase.Began, _stickStart);
+                Next(now);
+                break;
+            case 11:
+                if (frames < 2)
+                    return;
+                Touch(4, UnityEngine.InputSystem.TouchPhase.Moved, _stickStart + new Vector2(StickRangePx() * 0.2f, 0f));
+                Next(now);
+                break;
+            case 12:
+                if (frames < 2)
+                    return;
+                Expect(MoveX() == 0f, $"死區：推 20% 不移動（實際 {MoveX()}）");
+                Touch(4, UnityEngine.InputSystem.TouchPhase.Ended, _stickStart);
+                Next(now);
+                break;
+            case 13:
+                if (frames < 2)
+                    return;
+                Finish();
+                break;
+        }
+    }
+
+    private static void Next(double now)
+    {
+        _phase++;
+        _at = now;
+        _frameAt = Time.frameCount;
+    }
+
+    /// <summary>判定：中心、1.1 倍半徑（HitScale 1.15 內）算這顆；1.3 倍半徑不算。用目前 Screen 的版面。</summary>
+    private static void CheckHits()
+    {
+        var rts = Buttons();
+        for (var b = 0; b < ButtonCount; b++)
+        {
+            if (b == BInteract)
+                continue;
+            Expect(rts[b].gameObject.activeSelf, $"按鈕 {b} 已開放");
+            Expect(Classify(Center(b)) == b, $"按鈕 {b} 中心判定");
+            Expect(Classify(Edge(b, 1.1f)) == b, $"按鈕 {b} 1.1 倍半徑仍判定");
+            Expect(Classify(Edge(b, 1.3f)) != b, $"按鈕 {b} 1.3 倍半徑不判定");
+        }
+    }
+
+    private static Vector2 Center(int b) => Buttons()[b].position;
+
+    private static float Radius(int b)
+    {
+        var rt = Buttons()[b];
+        return rt.rect.width * 0.5f * rt.lossyScale.x;
+    }
+
+    /// <summary>從中心往離開跳躍鈕（右下角）的方向 k 倍半徑；跳躍本身往右下、右上小鈕往上。</summary>
+    private static Vector2 Edge(int b, float k)
+    {
+        Vector2 dir;
+        if (b == BJump)
+            dir = new Vector2(1f, -1f).normalized;
+        else if (b == BPause || b == BSwitch)
+            dir = Vector2.up;
+        else
+            dir = (Center(b) - Center(BJump)).normalized;
+        return Center(b) + dir * Radius(b) * k;
+    }
+    #endregion
+
+    #region 觸控模擬
+    private static void SetupInput()
+    {
+        var settings = InputSystem.settings;
+        settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+        settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+        _ts = InputSystem.AddDevice<Touchscreen>();
+        _ts.MakeCurrent();
+    }
+
+    private static void Touch(int id, UnityEngine.InputSystem.TouchPhase phase, Vector2 pos)
+    {
+        InputSystem.QueueStateEvent(_ts, new TouchState { touchId = id, phase = phase, position = pos });
+    }
+    #endregion
+
+    #region 遊戲（反射）
+    private static Type GameType(string name)
+    {
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            var t = asm.GetType(name);
+            if (t != null)
+                return t;
+        }
+        throw new Exception(Log + $"找不到型別 {name}");
+    }
+
+    private static object Ui() => UnityEngine.Object.FindAnyObjectByType(GameType("Sidescroller.StoryUi"));
+    private static object Pad() => Get(GameType("Sidescroller.SsTouch"), "Pad");
+    private static RectTransform[] Buttons() => (RectTransform[])Get(Pad(), "_buttons");
+    private static int Classify(Vector2 p) => (int)Call(Pad(), "Classify", p);
+    private static bool Held(int b) => (bool)Call(GameType("Sidescroller.SsTouch"), "Held", b);
+    private static float MoveX() => (float)Get(GameType("Sidescroller.SsTouch"), "MoveX");
+    private static float StickRangePx() => (float)Get(Pad(), "StickRangePx");
+
+    private static object Get(object target, string name)
+    {
+        var type = target as Type ?? target.GetType();
+        var inst = target is Type ? null : target;
+        var p = type.GetProperty(name, Any);
+        if (p != null)
+            return p.GetValue(inst);
+        var f = type.GetField(name, Any);
+        if (f != null)
+            return f.GetValue(inst);
+        throw new Exception(Log + $"{type.Name} 沒有 {name}");
+    }
+
+    private static object Call(object target, string name, params object[] args)
+    {
+        var type = target as Type ?? target.GetType();
+        var inst = target is Type ? null : target;
+        foreach (var m in type.GetMethods(Any))
+        {
+            if (m.Name == name && m.GetParameters().Length == args.Length)
+                return m.Invoke(inst, args);
+        }
+        throw new Exception(Log + $"{type.Name} 沒有 {name}({args.Length})");
+    }
+
+    private static void SetTouch(bool on)
+    {
+        var t = GameType("Sidescroller.SsTouch");
+        t.GetField("_detected", Any).SetValue(null, true);
+        t.GetField("_active", Any).SetValue(null, on);
+    }
+
+    private static void SkipCutscene()
+    {
+        var runner = Get(Ui(), "_runner");
+        if (runner != null && (bool)Get(runner, "CanSkip"))
+            Call(runner, "RequestSkip");
+    }
+    #endregion
+
+    #region 截圖
+    /// <summary>
+    /// 套上裝置 d 的版面後拍（觸控層與背包圖示；換算比例和實機相同），拍完還原成目前 Screen 的版面。
+    /// 拍的解析度和裝置相同，安全區域內縮不套（截圖工具整張畫布都用）。
+    /// </summary>
+    private static void Capture(string name, Device d)
+    {
+        var view = Pad();
+        var full = new Rect(0f, 0f, d.W, d.H);
+        var layout = Call(GameType("Sidescroller.TouchControlsView"), "Compute", d.W, d.H, full, d.Dpi);
+        var bagIcon = (RectTransform)Get(Get(Ui(), "LootHud"), "BagIcon");
+        var bagPos = bagIcon.anchoredPosition;
+        var bagSize = bagIcon.sizeDelta;
+        Call(view, "Apply", layout);
+        var bag = (Rect)Get(layout, "Bag");
+        bagIcon.anchoredPosition = bag.center - new Vector2(0f, (float)Get(layout, "SafeHeight"));
+        bagIcon.sizeDelta = bag.size;
+        try
+        {
+            var capture = typeof(UiShotCapture).GetMethod("Capture", Any);
+            var dir = SessionState.GetString(DirKey, "Temp");
+            capture.Invoke(null, new object[] { Path.Combine(dir, $"{name}_{d.W}x{d.H}.png"), new Vector2Int(d.W, d.H) });
+        }
+        finally
+        {
+            Call(view, "Apply", Call(GameType("Sidescroller.TouchControlsView"), "Compute", Screen.width, Screen.height, Screen.safeArea, Screen.dpi));
+            bagIcon.anchoredPosition = bagPos;
+            bagIcon.sizeDelta = bagSize;
+        }
+    }
+    #endregion
+
+    private static void Expect(bool ok, string what)
+    {
+        if (ok)
+            Debug.Log(Log + "PASS " + what);
+        else
+            Fail(what);
+    }
+
+    private static void Fail(string what)
+    {
+        _fails++;
+        Debug.LogError(Log + "FAIL " + what);
+    }
+
+    private static void Finish()
+    {
+        EditorPrefs.SetBool("Sidescroller.DevBoot", false);
+        SessionState.EraseBool(ActiveKey);
+        SessionState.EraseString(DirKey);
+        SessionState.EraseInt(FailKey);
+        EditorApplication.update -= Tick;
+        Debug.Log(Log + $"結束：失敗 {_fails} 項");
+        EditorApplication.Exit(_fails == 0 ? 0 : 1);
+    }
+}

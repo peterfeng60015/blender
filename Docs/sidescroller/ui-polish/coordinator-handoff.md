@@ -31,6 +31,29 @@
 2. touch／menu／hud 各自 `git merge claude/upbeat-golick-2db7a2` 拿到新素材與修好的截圖工具（`UiShotCapture` 不加 `-batchmode`、開 Editor 視窗切固定解析度），重拍前後對照、跑完 review 與反向驗證，交使用者 review。
 3. 協調整合四個分支（衝突點：`StoryUi.Init` 那 4 行以 hud 版為準、`StoryTexts.cs` 各自新增字串、`SsArt.cs` 以 ui 版為準、`GameSelectMenuView.cs` 以 menu 版為準且必須保留授權小字），跨邊界審查、從 Entry 實測，交使用者 review 後再問 commit／push／合進 main。
 
+## 換電腦接手（使用者 2026-10-30 下班前要求：「我要用別的電腦進行當前進度的繼續工作／務必確保相關檔案都有推上去」）
+
+各交接文件裡寫的本機路徑，在 repo 裡的對應位置（都在 main 的 `Docs/sidescroller/ui-polish/notes/`）：
+
+| 交接文件寫的本機路徑 | repo 裡的位置 |
+|---|---|
+| `side-session-notes/local_553e400a…/ui-split-contract.md`（分工約定、使用者決定紀錄） | `notes/ui-split-contract.md` |
+| `side-session-notes/local_710b2a16…/ui-polish-findings.md`（品質問題清單） | `notes/ui-polish-findings.md` |
+| `side-session-notes/local_553e400a…/ui-split-<角色>-handoff.md`（交接副本；正本在各分支） | `notes/ui-split-<角色>-handoff.md` |
+| `…/ui-split-menu-shots/`、`…/ui-split-hud-shots/`、`…/touch-shots/`（前後對照截圖） | `notes/shots/menu/`、`notes/shots/hud/`、`notes/shots/touch/` |
+| `…/touch-tools/TouchControlsCheck.cs`（touch 的暫時測試腳本） | `notes/touch-tools/TouchControlsCheck.cs.txt`（改副檔名避免被編譯；要用時拷進 `Assets/Editor/` 並改回 `.cs`） |
+| `local_710b2a16…/touch_design_mockup.png`（觸控設計示意圖） | `notes/touch_design_mockup.png` |
+| 各角色估時紀錄 `*-timelog.md` | `notes/*-timelog.md` |
+| ui worktree 的 `Tools/ComfyUI/out/raw/`（已生、未後製的 panel／button／ribbon 原圖＋遮罩）、`out/ref/hero_concept.png` | `notes/comfyui-out/raw/`、`notes/comfyui-out/ref/`。`Tools/ComfyUI/.gitignore` 刻意排除 `out/`，新電腦接手時把這兩個資料夾拷回 ui 分支的 `Tools/ComfyUI/out/` 即可接著後製 |
+| `/Users/iulee/UnityProject/blender-hero-meshy/Tools/Blender/Hero3D/meshy/concept_refined.png`（menu_hero 的 IP-Adapter 參考圖來源） | 已在 main：`Tools/Blender/Hero3D/meshy/concept_refined.png`（整合 worktree 已刪） |
+| 主角線的約定、審查與交接（hero-meshy-*） | `notes/hero-meshy/`（含新舊版對照圖 `final/`） |
+
+不在 repo、新電腦要自己準備的：
+- **ComfyUI 與模型（約 28GB）**：照 `ui-handoff.md`（ui 分支）「ComfyUI 環境」一節安裝；模型下載前照規則列檔名、來源、大小給使用者確認。需要 Apple Silicon（MPS）或能跑 FLUX 的 NVIDIA 顯示卡。
+- **session 編號**只在原 Mac 的 Claude app 有效；新電腦開新 session，讀本檔與各角色交接接手。
+- **看板**（`session-dashboard`）是另一個 repo（`peterfeng60015/session-dashboard`），新電腦要 clone 後照 `docs/setup.md` 重開。
+- 已刪除的 Meshy 中間產物（`hero-meshy-drop/`，169MB 的 FBX 與檢查圖）沒有進 repo；需要時用 `hero3d.py --source meshy` 重跑即可重現。
+
 ## 待使用者決定
 
 - 遊戲畫面右側的 IngameDebugConsole 錯誤計數浮窗，正式版要不要關掉（hud 提出，不屬於任何 UI session 的檔案）。
