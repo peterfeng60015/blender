@@ -1,0 +1,74 @@
+// 《熱浪急件》出包 pipeline。Tools/Jenkins/setup-jobs.ps1 會把 @PLATFORM@、@PROJECT_DIR@ 換成各任務的值，
+// 放進 Jenkins 的兩個任務（blender-WebGL → D:\Claude\blender、blender-Android → D:\Claude\blender_android）。
+// 改了這個檔要重跑 setup-jobs.ps1，Jenkins 上的任務才會更新。
+// 參數是三個勾選：BUILD_FULL（完整出包）、BUILD_ASSET（資源包）、BUILD_CODE（代碼包），定義在 setup-jobs.ps1 的任務設定裡。
+//
+// 流程：清空未 commit 的改動並同步到 origin/main → 同步 GCS 版號 → Unity 打包 → 上傳 bundle → 完整出包時發佈主體。
+// 各步驟細節見 Tools/Jenkins/ci.ps1。
+
+pipeline {
+    agent any
+    options {
+        disableConcurrentBuilds()
+        timeout(time: 3, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+    }
+    environment {
+        CI_PLATFORM = '@PLATFORM@'
+        CI_PROJECT  = '@PROJECT_DIR@'
+    }
+    stages {
+        stage('檢查參數') {
+            // 三個都沒勾就在動到專案之前停下來
+            steps { echo "出包模式：${modeOf(params)}" }
+        }
+        stage('清空改動並同步 main') {
+            steps {
+                // 放在這裡而不是 ci.ps1：專案還沒拉到含 ci.ps1 的 main 之前也要能跑
+                powershell '''
+                    $ErrorActionPreference = 'Continue'
+                    function Git { & git -C $env:CI_PROJECT @args 2>&1 | ForEach-Object { Write-Host "$_" }; if ($LASTEXITCODE -ne 0) { throw "git $args 失敗" } }
+                    Git fetch origin --prune
+                    Git reset --hard
+                    Git clean -fd
+                    Git checkout main
+                    # 本機 main 有還沒推的 commit 時 ff-only 會失敗，寧可停下來也不丟掉
+                    Git merge --ff-only origin/main
+                    Git log --oneline -1
+                '''
+            }
+        }
+        stage('同步 GCS 版號') {
+            steps { runCi('version', modeOf(params)) }
+        }
+        stage('Unity 打包') {
+            steps { runCi('build', modeOf(params)) }
+        }
+        stage('上傳 bundle') {
+            steps { runCi('upload', modeOf(params)) }
+        }
+        stage('發佈主體') {
+            when { expression { modeOf(params) == 'full' } }
+            steps { runCi('publish', 'full') }
+        }
+    }
+    post {
+        always {
+            archiveArtifacts artifacts: 'unity.log', allowEmptyArchive: true
+        }
+    }
+}
+
+// 勾選 → ci.ps1 的 -Mode：勾完整出包就是 full（其他兩個不看）；否則是勾到的套件，例如 asset、code、asset+code
+def modeOf(params) {
+    if (params.BUILD_FULL) return 'full'
+    def parts = []
+    if (params.BUILD_ASSET) parts << 'asset'
+    if (params.BUILD_CODE) parts << 'code'
+    if (!parts) error '三個都沒勾：請至少勾「完整出包」「資源包」「代碼包」其中一個'
+    return parts.join('+')
+}
+
+def runCi(String step, String mode) {
+    powershell "& \"\$env:CI_PROJECT\\Tools\\Jenkins\\ci.ps1\" -Step ${step} -Platform \$env:CI_PLATFORM -ProjectDir \$env:CI_PROJECT -Mode ${mode}"
+}
