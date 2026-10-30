@@ -93,3 +93,22 @@
 - 看板 `http://127.0.0.1:8897/`（板名 hero-meshy，`/Users/iulee/UnityProject/session-dashboard/boards/hero-meshy`）。協調的每 10 分鐘排程與變更請求 Monitor 已停；明天重開協調時重新掛上（`session-dashboard/docs/coordinator.md` A、B 段）。
 - 儀表板 repo 今天另推了 `4d1ef26`（巡檢提醒清掉已回答的「等你決定」）。
 - 注意：menu session 多次把收尾回報寫成英文，提醒三次後仍偶發，明天請留意。
+
+## 整合完成（2026-10-30 晚，Windows 電腦接手）
+
+接手 session 沒有重開四個角色 session，改在同一個 session 依序做完「明天接手順序」：
+
+- **ComfyUI**：裝在 `D:\ComfyUI`（commit b5a4321、PyTorch 2.14＋cu126、IPAdapter_plus、BiRefNet_ll），5 個模型共 27.8GB 已下載（使用者同意）。RTX 2070 SUPER 8GB 用 `--lowvram`，FLUX 每張 10～45 秒、SDXL＋IP-Adapter 約 50 秒。
+- **素材**：佇列剩下的 18 張全部生完（外框組 5、觸控 10、選單 3）並後製。重抽過選單背景（原本有黑邊與假網址浮水印）、標題底圖（長出怪生物）、彈弓圖示；seed 已寫回 `assets.json`。
+- **postprocess.py 修正**：黑底發光素材（sunburst、sparkle）先用四邊亮度當黑點再算 alpha——FLUX 的「純黑底」實際是深灰，原本整張背景會變成半透明灰方塊（通關畫面旋轉光芒）。
+- **ui 收尾**：對話框與名牌套 `Dialogue`／`Nameplate` 外框（旁白壓暗半透明），直向提示加面板外框與描邊標題（`RotateHintView` 的 `UiSkin` 是選填，選單不傳）。
+- **整合**：四個分支照順序 cherry-pick 疊到當時的 main（`f7482f5`，含 Meshy 主角）上，線性歷史。衝突只有 menu 的 `GameSelectMenuView.cs`、`StoryTexts.cs`，以 menu 版為準（已保留 Meshy 授權小字）；`StoryUi.Init` 的 hud 4 行與 ui 2 行都在。
+- **驗證**：素材匯入 50 張 sheet 0 個問題；`UiShotCapture` 的 game、menu 模式從 Entry 實測；Android、WebGL player 腳本編譯通過（暫時腳本已刪）。使用者看過暫停＋通關與整合後的畫面，同意併進 main。
+
+### 待辦（使用者已知）
+- **選單主角圖 `SsMenuHero` 是暫用**：SDXL＋IP-Adapter 抽 5 次都不像阿甲（會自己加襯衫、登山包、草帽；權重已調到 0.9）。使用者選「先用現在這張」；之後可改用遊戲裡的 3D 模型擺姿勢渲染，或用設計圖去背。
+- 開場時主角站在畫面最左，被左下觸控搖桿蓋住一部分。
+- IngameDebugConsole 的錯誤計數浮窗要不要留在正式版（待決定）。
+- 實機（S22 Ultra）觸控手感、一般台詞的對話框畫面（截圖工具只拍到開場旁白）還沒實測。
+- `UiShotCapture` 要 Unity 視窗在前景：被遮住時偶爾「等不到截圖」失敗，重跑即可。
+- 四個角色分支（`claude/upbeat-golick-2db7a2`、`claude/ui-touch-82e39b`、`claude/ui-menu-eaad50`、`claude/ui-hud-352f1a`）還留在遠端，內容已全部在 main。
