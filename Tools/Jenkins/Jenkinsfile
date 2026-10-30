@@ -27,14 +27,15 @@ pipeline {
                 // 放在這裡而不是 ci.ps1：專案還沒拉到含 ci.ps1 的 main 之前也要能跑
                 powershell '''
                     $ErrorActionPreference = 'Continue'
-                    function Git { & git -C $env:CI_PROJECT @args 2>&1 | ForEach-Object { Write-Host "$_" }; if ($LASTEXITCODE -ne 0) { throw "git $args 失敗" } }
-                    Git fetch origin --prune
-                    Git reset --hard
-                    Git clean -fd
-                    Git checkout main
+                    # 函式名不能叫 Git：PowerShell 不分大小寫，裡面的 git 會呼叫到自己
+                    function Invoke-Git { & git.exe -C $env:CI_PROJECT @args 2>&1 | ForEach-Object { Write-Host "$_" }; if ($LASTEXITCODE -ne 0) { throw "git $args 失敗" } }
+                    Invoke-Git fetch origin --prune
+                    Invoke-Git reset --hard
+                    Invoke-Git clean -fd
+                    Invoke-Git checkout main
                     # 本機 main 有還沒推的 commit 時 ff-only 會失敗，寧可停下來也不丟掉
-                    Git merge --ff-only origin/main
-                    Git log --oneline -1
+                    Invoke-Git merge --ff-only origin/main
+                    Invoke-Git log --oneline -1
                 '''
             }
         }
