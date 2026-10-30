@@ -7,7 +7,7 @@ namespace Sidescroller
     /// <summary>
     /// 底部對話框（cutscene-format.md §3 say）：立繪、名牌、逐字台詞、▼。
     /// 樣式：normal＝立繪＋名牌；screen＝立繪放進電視框；offscreen＝只有名牌；narration＝沒有名牌與立繪、文字置中斜體。
-    /// 由 <see cref="StoryUi"/> 建立與驅動，本身不讀輸入。
+    /// 由 <see cref="StoryUi"/> 建立與驅動，本身不讀輸入。對話框與名牌用 <see cref="UiSkin"/> 的外框（沒讀到時是純色）。
     /// </summary>
     public sealed class DialogueView
     {
@@ -21,7 +21,7 @@ namespace Sidescroller
         private readonly Image _portrait;
         private readonly RectTransform _tv;
         private readonly Image _tvPortrait;
-        private readonly Image _panelInner;
+        private readonly Image _panel;
         private readonly RectTransform _nameplate;
         private readonly TextMeshProUGUI _name;
         private readonly TextMeshProUGUI _text;
@@ -33,7 +33,7 @@ namespace Sidescroller
         /// <summary>目前台詞的字數（TMP 的 characterCount，含空白與換行）。</summary>
         public int CharacterCount { get; private set; }
 
-        public DialogueView(Transform parent, TMP_FontAsset font)
+        public DialogueView(Transform parent, TMP_FontAsset font, UiSkin skin)
         {
             _root = SsUiKit.Fill("Dialogue", parent);
 
@@ -70,11 +70,7 @@ namespace Sidescroller
             var panel = SsUiKit.Rect("Panel", _root, Vector2.zero, new Vector2(1f, 0f), new Vector2(0.5f, 0f));
             panel.offsetMin = new Vector2(PanelSide, PanelBottom);
             panel.offsetMax = new Vector2(-PanelSide, PanelBottom + PanelHeight);
-            SsUiKit.AddImage(panel, SsUiKit.Magenta);
-            var inner = SsUiKit.Fill("Inner", panel);
-            inner.offsetMin = new Vector2(6f, 6f);
-            inner.offsetMax = new Vector2(-6f, -6f);
-            _panelInner = SsUiKit.AddImage(inner, SsUiKit.Ink);
+            _panel = skin.Add(panel, UiSkin.Dialogue, 0.6f);
 
             var textRt = SsUiKit.Fill("Text", panel);
             textRt.offsetMin = new Vector2(52f, 44f);
@@ -96,7 +92,7 @@ namespace Sidescroller
 
             _nameplate = SsUiKit.Rect("Nameplate", panel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 0.5f));
             _nameplate.sizeDelta = new Vector2(240f, 62f);
-            SsUiKit.AddImage(_nameplate, SsUiKit.Orange);
+            skin.Add(_nameplate, UiSkin.Nameplate, 0.45f);
             var nameRt = SsUiKit.Fill("Name", _nameplate);
             _name = SsUiKit.AddText(nameRt, font, 36f, SsUiKit.Ink);
             #endregion
@@ -148,7 +144,8 @@ namespace Sidescroller
             }
             #endregion
 
-            _panelInner.color = narration ? new Color(0.03f, 0.02f, 0.06f, 0.85f) : SsUiKit.Ink;
+            // 旁白：外框壓暗、半透明，和角色台詞區分，也讓開場時看得到後面的場景與角色
+            _panel.color = narration ? new Color(0.55f, 0.55f, 0.6f, 0.9f) : Color.white;
             _text.alignment = narration ? TextAlignmentOptions.Center : TextAlignmentOptions.TopLeft;
             _text.fontStyle = narration ? FontStyles.Italic : FontStyles.Normal;
             _text.text = text ?? string.Empty;

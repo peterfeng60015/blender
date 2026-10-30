@@ -210,13 +210,13 @@ namespace Sidescroller
             Hud = new HudView(root, _font, session);
             LootHud = new LootHudView(root, _font, session);
             Touch = new TouchControlsView(root, _font, session, this);
-            Dialogue = new DialogueView(root, _font);
+            Dialogue = new DialogueView(root, _font, _skin);
             Fade = new FadeView(root);
             Banner = new BannerView(root, _font);
             BuildClearScreen(root);
             LootScreens = new LootScreens(root, _font, session, this);
             BuildPauseMenu(root);
-            _rotate = new RotateHintView(root, _font, StoryTexts.RotateSub);
+            _rotate = new RotateHintView(root, _font, StoryTexts.RotateSub, _skin);
             Fade.SetImmediate(1f, false);
             SsTouch.Pad = Touch;
 

@@ -113,7 +113,7 @@
     {
       "id": "icon_shoot",
       "model": "flux",
-      "seed": 2606,
+      "seed": 2608,
       "width": 1024,
       "height": 1024,
       "prompt": "UI element: a bold game icon of a wooden Y-shaped slingshot with a stretched band, cream and tangerine accents, front view, simple shape"
@@ -153,7 +153,7 @@
     {
       "id": "menu_bg",
       "model": "flux",
-      "seed": 4101,
+      "seed": 4103,
       "width": 1600,
       "height": 720,
       "mask": false,
@@ -173,8 +173,8 @@
       "width": 832,
       "height": 1024,
       "reference": "out/ref/hero_concept.png",
-      "reference_weight": 0.75,
-      "prompt": "full body character illustration of an anthropomorphic armadillo courier, red cap, yellow neckerchief, teal green messenger bag, denim shorts, brown shoes, three-quarter view facing left, confident delivery pose with one hand on the bag strap and the other giving a thumbs up, standing, feet at the bottom of the image",
+      "reference_weight": 0.9,
+      "prompt": "full body character illustration of an anthropomorphic armadillo courier with a segmented armored shell on its back and a long thin pointed snout, red cap, yellow neckerchief, teal green messenger bag, denim shorts, brown shoes, three-quarter view facing left, confident delivery pose with one hand on the bag strap and the other giving a thumbs up, standing, feet at the bottom of the image",
       "style_override": "1990s cel-shaded anime character art, flat colors with two-tone hard shading, clean bold dark outlines, vivid colors, high detail, no text, no watermark",
       "output": {
         "name": "SsMenuHero",
@@ -185,7 +185,7 @@
     {
       "id": "menu_logo_bg",
       "model": "flux",
-      "seed": 4303,
+      "seed": 4304,
       "width": 1024,
       "height": 384,
       "prompt": "UI element: a wide horizontal heat wave emblem backdrop for a game logo, wavy flame-like heat shimmer shapes with radiating light rays, hot magenta and warm gold, empty center",
