@@ -16,7 +16,7 @@
   "sheets": [
     {
       "action": "Idle",
-      "columns": 8,
+      "columns": 10,
       "rows": 1,
       "color": "SsUiSkin_Idle.png",
       "normal": "SsUiSkin_Idle_n.png"

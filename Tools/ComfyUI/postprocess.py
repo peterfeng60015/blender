@@ -67,9 +67,14 @@ def load_rgba(asset_id):
         # 遮罩邊緣收一點，避免帶到背景色的毛邊
         a = np.clip((a - 0.15) / 0.7, 0.0, 1.0)
     else:
-        # 黑底發光素材：亮度當 alpha，再把顏色除回去（未預乘）
-        a = np.clip(rgb.max(axis=2) * 1.15, 0.0, 1.0)
-        rgb = np.clip(rgb / np.maximum(a[..., None], 1e-3), 0.0, 1.0)
+        # 黑底發光素材：亮度當 alpha，再把顏色除回去（未預乘）。
+        # FLUX 的「純黑底」常是接近黑的深灰（實測 sunburst 是 RGB 17,14,16）：先用四邊的亮度當黑點扣掉，
+        # 否則整張背景會變成幾 % 不透明的灰方塊（通關畫面放大旋轉後很明顯）
+        lum = rgb.max(axis=2)
+        border = np.concatenate([lum[:16].ravel(), lum[-16:].ravel(), lum[:, :16].ravel(), lum[:, -16:].ravel()])
+        black = min(float(np.percentile(border, 95)) + 0.01, 0.2)
+        a = np.clip((lum - black) / (1.0 - black) * 1.15, 0.0, 1.0)
+        rgb = np.clip((rgb - black) / (1.0 - black) / np.maximum(a[..., None], 1e-3), 0.0, 1.0)
     return np.dstack([rgb, a])
 
 
