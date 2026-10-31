@@ -178,10 +178,13 @@ namespace Sidescroller
         #endregion
 
         #region 外觀
-        /// <summary>每格一個 SpriteRenderer（不用 drawMode Tiled：它要求 FullRect mesh，正式素材不一定是）。</summary>
+        /// <summary>
+        /// 地形 tile 合成網格（<see cref="TileMeshBatcher"/>，每 32 欄一個 draw call）。
+        /// 不用 SpriteRenderer drawMode Tiled：它要求 FullRect mesh，正式素材不一定是。
+        /// </summary>
         private static void BuildTiles(Transform parent, LevelData data, SpriteSet tiles)
         {
-            var group = NewChild(parent, "Tiles");
+            var batcher = NewChild(parent, "Tiles").gameObject.AddComponent<TileMeshBatcher>();
             for (var y = 0; y < data.Height; y++)
             {
                 for (var x = 0; x < data.Width; x++)
@@ -189,9 +192,10 @@ namespace Sidescroller
                     var variant = TileVariant(data, x, y);
                     if (variant < 0)
                         continue;
-                    PlaceSprite(group, $"Tile_{x}_{y}", tiles.Variant(variant), new Vector2(x + 0.5f, y + 0.5f), false, SsSorting.Terrain);
+                    batcher.Add(tiles.Variant(variant), new Vector2(x + 0.5f, y + 0.5f), x);
                 }
             }
+            batcher.Build(SsSorting.Terrain);
         }
 
         private static int TileVariant(LevelData data, int x, int y)
