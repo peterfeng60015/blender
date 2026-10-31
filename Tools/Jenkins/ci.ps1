@@ -37,7 +37,11 @@ function Invoke-Native([string]$Exe, [string[]]$Arguments) {
     $old = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & $Exe @Arguments 2>&1 | ForEach-Object { Write-Host "$_" }
+        & $Exe @Arguments 2>&1 | ForEach-Object {
+            # stderr 的空行包成 ErrorRecord 後字串會變成「System.Management.Automation.RemoteException」，跳過
+            $line = if ($_ -is [Management.Automation.ErrorRecord]) { $_.Exception.Message } else { "$_" }
+            if ($line -and $line -ne 'System.Management.Automation.RemoteException') { Write-Host $line }
+        }
         $code = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $old
