@@ -363,7 +363,7 @@ namespace Sidescroller
                     var sprites = await EntryScene.GameAssets.LoadSpritesAsync(location);
                     ct.ThrowIfCancellationRequested();
                     if (sprites != null && sprites.Length > 0)
-                        return sprites;
+                        return Distinct(sprites);
                 }
                 catch (OperationCanceledException)
                 {
@@ -387,6 +387,22 @@ namespace Sidescroller
             if (packageError != null)
                 Debug.LogWarning($"[Sidescroller.SsArt] 讀不到 {location}，改用佔位圖：{packageError.Message}");
             return null;
+        }
+
+        /// <summary>
+        /// 去掉重複的 sprite（保留順序）：收進 Sprite Atlas 的貼圖從 bundle 讀 sub-asset 時，同一個 sprite 會出現兩次，
+        /// 不去掉幀數會多、變化編號會錯位。讀取在 Entry（主體）裡，所以在這裡處理。
+        /// </summary>
+        private static Sprite[] Distinct(Sprite[] sprites)
+        {
+            var seen = new HashSet<Sprite>();
+            var result = new List<Sprite>(sprites.Length);
+            foreach (var sprite in sprites)
+            {
+                if (sprite != null && seen.Add(sprite))
+                    result.Add(sprite);
+            }
+            return result.Count == sprites.Length ? sprites : result.ToArray();
         }
 
         /// <summary>讀不到回 null。Editor 下 AssetPackage 讀不到時改讀 <see cref="ModelsRoot"/> 底下的檔。</summary>

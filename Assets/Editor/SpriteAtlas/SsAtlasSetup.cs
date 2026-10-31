@@ -17,6 +17,9 @@ using UnityEngine.U2D;
 /// 只加主圖（不加 _n 法線圖）：法線圖是主圖的 Secondary Texture「_NormalMap」，圖集會自動一起打包。
 /// 選單主視覺（SsMenuBg、SsMenuHero）是整張大圖，放進圖集沒有好處，不收。
 /// 打包設定：UI 的 Image 不支援旋轉與 tight packing（四邊形會蓋到鄰圖），都關掉。
+/// ⚠️ 即使關掉 tight packing，圖集仍會裁掉每個 sprite 的透明邊（textureRect 比 rect 小）：
+/// 收進來的 sheet 只能整個 sprite 拿去用，不能再用原圖座標 Sprite.Create 切子圖。
+/// ⚠️ 收進圖集的 sprite 從 bundle 讀 sub-asset 時會重複出現一次，SsArt 讀完會去重。
 ///
 /// 可重複執行（內容與設定以這份程式為準）。素材換圖不用重跑：圖集收的是貼圖，打包時自動重新打包。
 /// 新增 UI 類 sheet 時加進 <see cref="UiSheets"/> 再跑一次。
@@ -34,7 +37,7 @@ public static class SsAtlasSetup
     private static readonly string[] UiSheets =
     {
         "SsUi/SsUi_Idle",
-        "SsUiSkin/SsUiSkin_Idle",
+        // 不收 SsUiSkin：UiSkin 在執行時從原圖座標切九宮格（Sprite.Create），圖集會裁掉透明邊、座標對不上
         "SsTouchUi/SsTouchUi_Idle",
         "SsMenuLogoBg/SsMenuLogoBg_Idle",
         "SsPortraitHero/SsPortraitHero_Face",
