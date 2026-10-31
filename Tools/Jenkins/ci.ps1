@@ -266,3 +266,6 @@ switch ($Step) {
     'upload' { Step-Upload }
     'publish' { Step-Publish }
 }
+# 走到這裡就是成功：失敗都會丟例外。明確回 0，否則 Jenkins 會拿最後一個外部指令的結束碼
+# （例如 gsutil cat 讀不到還不存在的 version.json 回 1）當成這一步的結果
+exit 0
