@@ -6,9 +6,8 @@ namespace Sidescroller
         public const string GameTitle = "熱浪急件";
         /// <summary>只有一款遊戲時選單選項的字（Logo 已經是遊戲名稱）。</summary>
         public const string MenuStart = "開始遊戲";
+        /// <summary>選單的鍵盤操作提示；觸控時不顯示提示（按鈕上的字就夠清楚）。</summary>
         public const string MenuHint = "↑↓：選擇　Enter：確定";
-        /// <summary>觸控提示，配合只有一款遊戲時的 <see cref="MenuStart"/>；選單加第二款遊戲時要一起改。</summary>
-        public const string MenuHintTouch = "點一下「開始遊戲」";
         public const string MenuErrorPrefix = "啟動失敗：";
         /// <summary>主角 3D 模型的授權標註（Meshy 免費版 CC BY 4.0 要求署名），選單右下角小字。</summary>
         public const string MenuModelCredit = "主角模型：Meshy（CC BY 4.0）";
@@ -125,7 +124,7 @@ namespace Sidescroller
         /// <summary>全部固定文字（含觸控版關卡提示），給 Editor 檢查工具檢查缺字（KeyboardHints 是關卡資料原文，由關卡檢查涵蓋）。</summary>
         public static readonly string[] All = Concat(new[]
         {
-            GameTitle, MenuStart, MenuHint, MenuHintTouch, MenuErrorPrefix, MenuModelCredit,
+            GameTitle, MenuStart, MenuHint, MenuErrorPrefix, MenuModelCredit,
             DialogueNext, DialogueHelp, DialogueHelpTouch,
             PauseTitle, PauseResume, PauseSkip, PauseRespawn, PauseQuit,
             ClearTitle, ClearTimePrefix, ClearRestart, ClearQuit,

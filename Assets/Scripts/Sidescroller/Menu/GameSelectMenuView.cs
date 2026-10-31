@@ -297,7 +297,8 @@ namespace Sidescroller
             _skin.Add(SsUiKit.Fill("Pill", hint), UiSkin.Pill, 0.5f, new Color(1f, 1f, 1f, 0.92f));
             _hint = SsUiKit.AddText(SsUiKit.Fill("Text", hint), _font, 34f, SsUiKit.Paper);
             _hint.textWrappingMode = TextWrappingModes.NoWrap;
-            _hint.text = HintText();
+            _hint.text = StoryTexts.MenuHint;
+            hint.gameObject.SetActive(!SsInput.TouchActive);
             _hintGroup = hint.gameObject.AddComponent<CanvasGroup>();
             _hintGroup.alpha = 0f;
 
@@ -355,7 +356,6 @@ namespace Sidescroller
             }
         }
 
-        private static string HintText() =>SsInput.TouchActive ? StoryTexts.MenuHintTouch : StoryTexts.MenuHint;
 
         /// <summary>只有一款遊戲時選項寫「開始遊戲」（Logo 已經是遊戲名稱）；多款時列遊戲名稱。</summary>
         private static string[] Labels()
@@ -380,9 +380,10 @@ namespace Sidescroller
             Animate(dt);
             if (_chosen)
                 return;
-            var hint = HintText();
-            if (_hint.text != hint)
-                _hint.text = hint;
+            // 鍵盤操作提示；觸控時整個不顯示（按鈕上已經寫著「開始遊戲」，不必再提示一次）
+            var showHint = !SsInput.TouchActive;
+            if (_hintGroup.gameObject.activeSelf != showHint)
+                _hintGroup.gameObject.SetActive(showHint);
             // 直向時蓋提示、不接受輸入（選單沒有遊戲進行，不必暫停）
             if (_rotate.Refresh())
                 return;

@@ -49,6 +49,9 @@ namespace EntryScene
         private readonly GameObject _dialog;
         private readonly TextMeshProUGUI _dialogText;
         private readonly RectTransform _dialogButtons;
+        /// <summary>所有文字共用的外框材質（字型材質複製一份加深紫外框）：亮背景、漸層按鈕上都讀得到。</summary>
+        private readonly Material _outlineMaterial;
+        private static readonly Color OutlineColor = new Color(0.16f, 0.06f, 0.18f);
         private float _target;
         private float _shown;
         private UniTaskCompletionSource<int> _dialogResult;
@@ -58,9 +61,17 @@ namespace EntryScene
             _assets = assets ?? new Assets();
             if (_assets.font == null)
                 Debug.LogError("[EntryLoadingUi] 沒有指派中文字型（執行 Tools/Entry/設定載入畫面），文字會顯示成方框");
+            else
+            {
+                _outlineMaterial = new Material(_assets.font.material) { name = "EntryLoadingText" };
+                _outlineMaterial.SetFloat(ShaderUtilities.ID_OutlineWidth, 0.25f);
+                _outlineMaterial.SetColor(ShaderUtilities.ID_OutlineColor, OutlineColor);
+                _outlineMaterial.SetFloat(ShaderUtilities.ID_FaceDilate, 0.15f);
+            }
 
             _root = new GameObject("EntryLoadingCanvas");
-            UnityEngine.Object.DontDestroyOnLoad(_root);
+            if (Application.isPlaying) // Editor 的預覽工具在編輯模式下建畫面，那時不能呼叫
+                UnityEngine.Object.DontDestroyOnLoad(_root);
             var canvas = _root.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 50;
@@ -76,7 +87,8 @@ namespace EntryScene
             if (EventSystem.current == null)
             {
                 _eventSystem = new GameObject("EntryEventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
-                UnityEngine.Object.DontDestroyOnLoad(_eventSystem);
+                if (Application.isPlaying)
+                    UnityEngine.Object.DontDestroyOnLoad(_eventSystem);
             }
 
             #region 背景：主視覺蓋滿畫面＋下方壓暗
@@ -101,11 +113,22 @@ namespace EntryScene
                 AddImage(_logo, Color.white, _assets.logo);
             }
 
-            _status = AddText(Rect("Status", root, new Vector2(0.5f, 0.24f), new Vector2(0.5f, 0.24f)), 40f, new Vector2(1600f, 64f));
-
-            #region 進度條：外框＋填充（九宮格，寬度跟著進度）＋百分比
+            #region 進度條：外框＋填充（九宮格，寬度跟著進度）；上方一行：狀態靠左、百分比靠右（不壓在條上）
             var bar = Rect("Bar", root, new Vector2(0.5f, 0.14f), new Vector2(0.5f, 0.14f));
             bar.sizeDelta = new Vector2(BarWidth, BarHeight);
+            var labels = Rect("Labels", bar, new Vector2(0f, 1f), new Vector2(1f, 1f));
+            labels.pivot = new Vector2(0.5f, 0f);
+            labels.sizeDelta = new Vector2(-FillInsetX * 2f, 60f);
+            labels.anchoredPosition = new Vector2(0f, 6f);
+            _status = AddText(Rect("Status", labels, Vector2.zero, new Vector2(0.82f, 1f)), 40f, Vector2.zero);
+            _status.alignment = TextAlignmentOptions.Left;
+            // 錯誤訊息可能很長：先縮字，還放不下就截斷，不蓋到百分比
+            _status.enableAutoSizing = true;
+            _status.fontSizeMin = 26f;
+            _status.fontSizeMax = 40f;
+            _status.overflowMode = TextOverflowModes.Ellipsis;
+            _percent = AddText(Rect("Percent", labels, new Vector2(0.82f, 0f), Vector2.one), 40f, Vector2.zero);
+            _percent.alignment = TextAlignmentOptions.Right;
             var frame = AddImage(bar, Color.white, _assets.barFrame);
             if (_assets.barFrame == null)
                 frame.color = new Color(0.17f, 0.11f, 0.29f);
@@ -117,7 +140,6 @@ namespace EntryScene
             var fillImage = AddImage(_fill, Color.white, _assets.barFill);
             if (_assets.barFill == null)
                 fillImage.color = new Color(1f, 0.55f, 0.2f);
-            _percent = AddText(Rect("Percent", bar, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f)), 34f, new Vector2(300f, BarHeight));
             #endregion
 
             _retry = AddButton(Rect("Retry", root, new Vector2(0.5f, 0.33f), new Vector2(0.5f, 0.33f)), "重試", true, onRetry).gameObject;
@@ -200,6 +222,8 @@ namespace EntryScene
                 UnityEngine.Object.Destroy(_root);
             if (_eventSystem != null)
                 UnityEngine.Object.Destroy(_eventSystem);
+            if (_outlineMaterial != null)
+                UnityEngine.Object.Destroy(_outlineMaterial);
         }
 
         private void Tick(float dt)
@@ -254,7 +278,10 @@ namespace EntryScene
             var text = rt.gameObject.AddComponent<TextMeshProUGUI>();
             if (_assets.font != null)
                 text.font = _assets.font;
+            if (_outlineMaterial != null)
+                text.fontSharedMaterial = _outlineMaterial;
             text.fontSize = size;
+            text.fontStyle = FontStyles.Bold;
             text.color = Color.white;
             text.alignment = TextAlignmentOptions.Center;
             text.textWrappingMode = TextWrappingModes.NoWrap;
@@ -277,9 +304,9 @@ namespace EntryScene
             colors.pressedColor = new Color(0.75f, 0.75f, 0.75f);
             button.colors = colors;
             button.onClick.AddListener(() => onClick?.Invoke());
-            var text = AddText(Rect("Label", rt, Vector2.zero, Vector2.one), 40f, Vector2.zero);
+            // 白字＋深紫外框（AddText 的預設）：主要按鈕底下是亮色漸層與反光帶，深色字會被吃掉
+            var text = AddText(Rect("Label", rt, Vector2.zero, Vector2.one), 44f, Vector2.zero);
             text.text = label;
-            text.color = primary ? new Color(0.17f, 0.06f, 0.18f) : Color.white;
             return button;
         }
         #endregion
