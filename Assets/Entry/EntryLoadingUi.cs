@@ -123,10 +123,11 @@ namespace EntryScene
             _status = AddText(Rect("Status", labels, Vector2.zero, new Vector2(0.82f, 1f)), 40f, Vector2.zero);
             _status.alignment = TextAlignmentOptions.Left;
             // 錯誤訊息可能很長：先縮字，還放不下就截斷，不蓋到百分比
+            // （不用 Ellipsis：思源黑體的字集沒有「…」，TMP 會自動改成截斷並記警告）
             _status.enableAutoSizing = true;
             _status.fontSizeMin = 26f;
             _status.fontSizeMax = 40f;
-            _status.overflowMode = TextOverflowModes.Ellipsis;
+            _status.overflowMode = TextOverflowModes.Truncate;
             _percent = AddText(Rect("Percent", labels, new Vector2(0.82f, 0f), Vector2.one), 40f, Vector2.zero);
             _percent.alignment = TextAlignmentOptions.Right;
             var frame = AddImage(bar, Color.white, _assets.barFrame);
