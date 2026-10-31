@@ -113,9 +113,58 @@ public static class AndroidBuildTool
         PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
         PlayerSettings.Android.forceInternetPermission = true;
+        var signed = ApplyReleaseKeystore();
 
         AssetDatabase.SaveAssets();
-        Debug.Log("[AndroidBuildTool] 已套用 Android Player Settings：自動旋轉限橫向、IL2CPP、ARM64、強制 INTERNET 權限");
+        Debug.Log("[AndroidBuildTool] 已套用 Android Player Settings：自動旋轉限橫向、IL2CPP、ARM64、強制 INTERNET 權限、" +
+                  (signed ? "正式簽章" : "除錯簽章"));
+    }
+
+    /// <summary>
+    /// 正式簽章設定檔：環境變數 BLENDER_KEYSTORE_PROPERTIES，沒設時用 %USERPROFILE%/.blender-keystore/release.properties。
+    /// 內容是 storeFile、storePassword、keyAlias、keyPassword（key=value 一行一個）。keystore 與密碼都不進版控，
+    /// 換電腦出包要把整個 .blender-keystore 資料夾帶過去——簽章不同的 APK 不能覆蓋安裝，主體自動更新會失敗。
+    /// </summary>
+    public static string ReleaseKeystorePropertiesPath
+    {
+        get
+        {
+            var env = Environment.GetEnvironmentVariable("BLENDER_KEYSTORE_PROPERTIES");
+            return !string.IsNullOrEmpty(env)
+                ? env
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".blender-keystore", "release.properties");
+        }
+    }
+
+    /// <summary>
+    /// 有正式簽章設定檔就用它簽（回傳 true），沒有就用 Unity 的除錯簽章並警告（回傳 false）。
+    /// 密碼只放在這次 Editor 的記憶體裡（Unity 不會把 keystore 密碼寫進 ProjectSettings）。
+    /// </summary>
+    public static bool ApplyReleaseKeystore()
+    {
+        var path = ReleaseKeystorePropertiesPath;
+        if (!File.Exists(path))
+        {
+            PlayerSettings.Android.useCustomKeystore = false;
+            Debug.LogWarning($"[AndroidBuildTool] 找不到正式簽章設定 {path}，改用除錯簽章（這個 APK 不能覆蓋正式簽章的版本）");
+            return false;
+        }
+        var props = File.ReadAllLines(path)
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0 && !l.StartsWith("#") && l.Contains("="))
+            .ToDictionary(l => l.Substring(0, l.IndexOf('=')).Trim(), l => l.Substring(l.IndexOf('=') + 1).Trim());
+        string Get(string key) => props.TryGetValue(key, out var v) && v.Length > 0
+            ? v
+            : throw new Exception($"[AndroidBuildTool] {path} 缺少 {key}");
+        var storeFile = Get("storeFile");
+        if (!File.Exists(storeFile))
+            throw new Exception($"[AndroidBuildTool] 找不到 keystore {storeFile}");
+        PlayerSettings.Android.useCustomKeystore = true;
+        PlayerSettings.Android.keystoreName = storeFile;
+        PlayerSettings.Android.keystorePass = Get("storePassword");
+        PlayerSettings.Android.keyaliasName = Get("keyAlias");
+        PlayerSettings.Android.keyaliasPass = Get("keyPassword");
+        return true;
     }
 
     #endregion

@@ -40,6 +40,17 @@ public static class CIBuild
         string summary;
         if (mode == "full")
         {
+            if (target == BuildTarget.Android)
+            {
+                // 主體自動更新：versionCode 由 Jenkins 依 GCS 上的版本資訊遞增後傳進來；一定要正式簽章，否則玩家裝不上
+                var versionCode = GetArg("-ciVersionCode");
+                if (!string.IsNullOrEmpty(versionCode))
+                    PlayerSettings.Android.bundleVersionCode = int.Parse(versionCode);
+                if (!File.Exists(AndroidBuildTool.ReleaseKeystorePropertiesPath))
+                    throw new Exception($"[CIBuild] 找不到正式簽章設定 {AndroidBuildTool.ReleaseKeystorePropertiesPath}，" +
+                                        "除錯簽章的 APK 不能更新已安裝的版本");
+                Debug.Log($"[CIBuild] Android versionCode {PlayerSettings.Android.bundleVersionCode}");
+            }
             summary = target == BuildTarget.WebGL ? WebGLBuildTool.BuildAll() : AndroidBuildTool.BuildAll();
         }
         else
@@ -62,6 +73,7 @@ public static class CIBuild
             "mode=" + mode,
             "bundleVersion=" + PlayerSettings.bundleVersion,
             "productName=" + PlayerSettings.productName,
+            "versionCode=" + PlayerSettings.Android.bundleVersionCode,
             "summary=" + summary.Replace("\n", " | "),
         });
         Debug.Log($"[CIBuild] 完成：{summary}");

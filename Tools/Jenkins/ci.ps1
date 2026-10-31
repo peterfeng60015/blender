@@ -28,6 +28,9 @@ $ApkOutput = if ($env:CI_APK_OUTPUT) { $env:CI_APK_OUTPUT } else { 'D:\Claude\Un
 $NoCache = 'Cache-Control:no-cache'
 $ResultFile = Join-Path $ProjectDir 'Builds\ci_result.txt'
 $UnityLog = Join-Path $ProjectDir 'Builds\ci_unity.log'
+# Android 完整出包的 versionCode（version 步驟算好，build 步驟傳給 Unity）
+$VersionCodeFile = Join-Path $ProjectDir 'Builds\ci_version_code.txt'
+$IsAppBuild = $Platform -eq 'Android' -and $Mode -eq 'full'
 
 # 執行外部指令，輸出照印，結束碼非 0 就丟例外。
 # stderr 合併成一般輸出：PowerShell 5.1 在 Jenkins 底下會把 native stderr 當錯誤，gsutil 的進度訊息就會讓步驟失敗。
@@ -113,6 +116,30 @@ function Step-Version {
         [IO.File]::WriteAllText($local, $remote)   # 不帶 BOM，與 YooAsset 寫的格式一致
         Write-Host "$pkg：本機 $localVer → 遠端 $remote，這次出包會從 $remote 往後配號"
     }
+    if ($IsAppBuild) {
+        # 主體 versionCode：GCS 上 Android/app/version.json 的 versionCode + 1（還沒有時從 2 開始：最早裝的 APK 是 1）
+        $remoteCode = 1
+        $json = Get-RemoteText "$GcsRoot/Android/app/version.json"
+        if ($json) { $remoteCode = [long](($json | ConvertFrom-Json).versionCode) }
+        $next = $remoteCode + 1
+        New-Item -ItemType Directory -Force (Split-Path $VersionCodeFile) | Out-Null
+        [IO.File]::WriteAllText($VersionCodeFile, "$next")
+        Write-Host "主體 versionCode：遠端 $remoteCode → 這次 $next"
+    }
+}
+
+# 讀 GCS 上的文字檔；不存在回 $null（權限問題由 Step-Version 一開始的 gsutil ls 擋掉）
+function Get-RemoteText([string]$Url) {
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $text = (& gsutil cat $Url 2>$null) -join "`n"
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $old
+    }
+    if ($code -ne 0) { return $null }
+    return $text
 }
 
 function Step-Build {
@@ -125,6 +152,10 @@ function Step-Build {
     New-Item -ItemType Directory -Force (Split-Path $UnityLog) | Out-Null
     if (Test-Path $UnityLog) { Remove-Item $UnityLog }
     $argLine = "-batchmode -quit -projectPath `"$ProjectDir`" -buildTarget $Platform -executeMethod CIBuild.Run -ciMode $Mode -logFile `"$UnityLog`""
+    if ($IsAppBuild) {
+        if (-not (Test-Path $VersionCodeFile)) { throw "找不到 $VersionCodeFile（version 步驟沒跑？）" }
+        $argLine += " -ciVersionCode $((Get-Content $VersionCodeFile -Raw).Trim())"
+    }
     Write-Host "> $unity $argLine"
     $start = Get-Date
     # Unity.exe 是視窗程式，直接 & 呼叫不會等它結束，所以用 Start-Process，邊等邊讀 log
@@ -207,6 +238,24 @@ function Step-Publish {
         $target = Join-Path $ApkOutput $name
         Copy-Item $apk $target
         Write-Host "APK 已複製到 $target（$([math]::Round((Get-Item $target).Length / 1MB, 1)) MB）"
+
+        # 主體自動更新：APK 傳到 GCS 的 Android/app/，版本資訊 version.json 最後傳（玩家不會讀到 APK 還沒傳完的版本）
+        $versionCode = [long]$result.versionCode
+        $appDir = "$GcsRoot/Android/app"
+        $apkName = "$($result.productName)-$versionCode.apk"
+        Invoke-Native gsutil @('cp', $apk, "$appDir/$apkName")
+        $info = [ordered]@{
+            versionCode = $versionCode
+            versionName = $result.bundleVersion
+            apk         = $apkName
+            size        = (Get-Item $apk).Length
+            sha256      = (Get-FileHash $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        $infoFile = Join-Path $ProjectDir 'Builds\Android\version.json'
+        [IO.File]::WriteAllText($infoFile, ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+        Invoke-Native gsutil @('-h', $NoCache, '-h', 'Content-Type:application/json', 'cp', $infoFile, "$appDir/version.json")
+        $url = $appDir -replace '^gs://', 'https://storage.googleapis.com/'
+        Write-Host "主體已發佈：versionCode $versionCode → $url/$apkName"
     }
 }
 

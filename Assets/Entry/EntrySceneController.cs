@@ -18,7 +18,8 @@ namespace EntryScene
     ///
     /// HPS 裡的 Addressables、gate、VersionDataModel、hacker、catalog、hash json、Boot 場景都不搬
     /// （本專案沒有 Addressables 可載 Boot 場景，所以改用反射呼叫遊戲入口）。
-    /// 進度只用 log 加上 OnGUI 的簡單文字顯示，不依賴場景裡的 UI 物件。
+    /// 畫面是 <see cref="EntryLoadingUi"/>（uGUI：狀態文字、分段加權的進度條、失敗時的重試、提示窗）。
+    /// Android 會先檢查主體（APK）版本，有新版就強制更新（<see cref="AppUpdateChecker"/>）。
     /// </summary>
     public class EntrySceneController : MonoBehaviour
     {
@@ -73,43 +74,48 @@ namespace EntryScene
         private readonly HashSet<string> _loadedAotDlls = new HashSet<string>();
         private readonly HashSet<string> _loadedProjectDlls = new HashSet<string>();
 
-        private string _status = string.Empty;
-        private float _progress = 0f;
-        private bool _failed = false;
+        [SerializeField]
+        [Tooltip("載入畫面的素材與中文字型（Assets/Entry/UI），由 Tools/Entry/設定載入畫面 指派")]
+        private EntryLoadingUi.Assets loadingAssets = new EntryLoadingUi.Assets();
+
+        private EntryLoadingUi _ui;
+
+        /// <summary>主體版本已檢查過且不用更新（Retry 時不再檢查）。</summary>
+        private bool _appUpdateChecked = false;
+
+        #region 進度分段（加權）
+        // 整條進度條依階段分配：沒有下載量時下載段直接走完，進度一樣會前進
+        private const float InitEnd = 0.10f;       // 檢查主體版本、連線伺服器（初始化兩包）
+        private const float DownloadEnd = 0.70f;   // 下載更新
+        private const float AotEnd = 0.85f;        // 載入 AOT 補充元數據
+        private const float ModuleEnd = 0.95f;     // 載入遊戲模組 dll
+        // 0.95～1：進入遊戲
+        #endregion
 
         #region Life Cycle
         private void Start()
         {
+            _ui = new EntryLoadingUi(loadingAssets, Retry);
             StartEntryProcess();
         }
 
-        private void OnGUI()
+        private void OnDestroy()
         {
-            var scale = Mathf.Max(1f, Screen.height / 720f);
-            var matrix = GUI.matrix;
-            GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
-            try
-            {
-                GUILayout.BeginArea(new Rect(16, 16, Screen.width / scale - 32, Screen.height / scale - 32));
-                GUILayout.Label(_status);
-                if (_progress > 0f && _progress < 1f)
-                    GUILayout.Label($"{_progress:P1}");
-                if (_failed && GUILayout.Button("重試", GUILayout.Width(160), GUILayout.Height(40)))
-                    Retry();
-                GUILayout.EndArea();
-            }
-            finally
-            {
-                GUI.matrix = matrix;
-            }
+            _ui?.Dispose();
+            _ui = null;
         }
         #endregion
 
         #region Private Function
+        /// <summary>顯示提示窗，等玩家按下其中一個按鈕，回傳按鈕的索引。</summary>
+        private UniTask<int> AskAsync(string text, params string[] buttons) => _ui.AskAsync(text, buttons);
+
+        private void SetProgress(float progress) => _ui?.SetProgress(progress);
+
         private void StartEntryProcess()
         {
-            _failed = false;
-            _progress = 0f;
+            _ui.ShowRetry(false);
+            _ui.SetProgress(0f, true);
             RunStartupFlowAsync().Forget();
         }
 
@@ -280,6 +286,14 @@ namespace EntryScene
             _startupFlowRunning = true;
             try
             {
+                // 主體要先更新：新的代碼包是配合新主體打的，舊主體不能繼續往下載
+                if (!_appUpdateChecked)
+                {
+                    if (await CheckAppUpdateAsync())
+                        return;
+                    _appUpdateChecked = true;
+                }
+
                 var updateCode = false;
                 if (_dllsLoadedForVersion != null)
                 {
@@ -313,9 +327,16 @@ namespace EntryScene
                 if (updateCode || updateAsset)
                     await UpdateContentAsync(updateCode, updateAsset);
 
-                SetStatus("進入遊戲模組");
+                SetStatus("進入遊戲");
+                SetProgress(ModuleEnd);
+                await UniTask.Yield(); // 讓這一幀先畫出「進入遊戲」
                 EnterGame();
-                SetStatus("遊戲模組代碼已啟動");
+                SetProgress(1f);
+                Debug.Log("[Startup] 遊戲模組代碼已啟動");
+                // 遊戲的第一個畫面（選單）建好、蓋上來之後再拆載入畫面，中間不會閃黑
+                await UniTask.Delay(TimeSpan.FromSeconds(0.5), ignoreTimeScale: true);
+                _ui?.Dispose();
+                _ui = null;
             }
             catch (Exception ex)
             {
@@ -330,8 +351,8 @@ namespace EntryScene
                 }
                 else
                 {
-                    _failed = true;
                     SetStatus($"載入失敗：{shown.Message}");
+                    _ui?.ShowRetry(true);
                 }
             }
             finally
@@ -408,6 +429,123 @@ namespace EntryScene
         }
 
         /// <summary>
+        /// Android 主體版本檢查（強制更新）。回傳 true＝更新流程接手，開機流程不往下走。
+        /// 讀不到版本資訊（網路錯誤、伺服器上還沒有）時記警告、照常開機：不因為檢查失敗讓玩家完全進不了遊戲。
+        /// 其他平台與 Editor 不檢查。
+        /// </summary>
+        private async UniTask<bool> CheckAppUpdateAsync()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            SetStatus("檢查主體版本");
+            var folderUrl = AppUpdateChecker.AppFolderUrl(EffectiveServerRoot);
+            AppUpdateChecker.AppVersionInfo remote;
+            long local;
+            try
+            {
+                remote = await AppUpdateChecker.FetchAsync(folderUrl);
+                local = AppUpdateChecker.LocalVersionCode();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AppUpdate] 主體版本檢查失敗，略過：{ex.Message}");
+                return false;
+            }
+            if (remote == null)
+            {
+                Debug.Log("[AppUpdate] 伺服器上沒有主體版本資訊，略過");
+                return false;
+            }
+            Debug.Log($"[AppUpdate] 已安裝 versionCode {local}，伺服器 {remote.versionCode}（{remote.apk}）");
+            if (remote.versionCode <= local)
+                return false;
+            await RunAppUpdateAsync(folderUrl, remote, local);
+            return true;
+#else
+            await UniTask.CompletedTask;
+            return false;
+#endif
+        }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        /// <summary>
+        /// 強制更新：提示窗（確認＝下載並安裝、取消＝退出遊戲）→ 下載與驗證 → 需要時請玩家允許「安裝未知應用程式」
+        /// → 叫出系統安裝畫面。系統安裝畫面被取消時可以再叫一次；不提供跳過。
+        /// </summary>
+        private async UniTask RunAppUpdateAsync(string folderUrl, AppUpdateChecker.AppVersionInfo remote, long local)
+        {
+            SetStatus("主體有新版本");
+            var size = remote.size > 0 ? $"，下載約 {FormatBytes(remote.size)}" : string.Empty;
+            if (await AskAsync($"發現新版本（版號 {remote.versionCode}，目前 {local}）。\n需要更新才能繼續遊戲{size}。\n\n確認：自動下載並安裝\n取消：退出遊戲",
+                    "確認", "取消") != 0)
+            {
+                QuitGame();
+                return;
+            }
+
+            string apkPath = null;
+            while (apkPath == null)
+            {
+                try
+                {
+                    // 更新主體時整條進度條都給 APK 下載用
+                    SetStatus("下載新版本");
+                    _ui.SetProgress(0f, true);
+                    apkPath = await AppUpdateChecker.DownloadAsync(folderUrl, remote, p =>
+                    {
+                        SetProgress(p);
+                        if (remote.size > 0)
+                            _ui.SetStatus($"下載新版本：{FormatBytes((long)(remote.size * p))} / {FormatBytes(remote.size)}");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[AppUpdate] 下載失敗：{ex.Message}");
+                    if (await AskAsync($"下載失敗：{ex.Message}", "重試", "退出遊戲") != 0)
+                    {
+                        QuitGame();
+                        return;
+                    }
+                }
+            }
+
+            while (true)
+            {
+                if (!AppUpdateChecker.CanInstall())
+                {
+                    SetStatus("等待允許安裝");
+                    if (await AskAsync("安裝前要允許本遊戲「安裝未知應用程式」。\n按「前往設定」打開設定頁，允許後回到遊戲按「繼續」。",
+                            "前往設定", "退出遊戲") != 0)
+                    {
+                        QuitGame();
+                        return;
+                    }
+                    AppUpdateChecker.OpenInstallSettings();
+                    if (await AskAsync("允許後回到這裡按「繼續」。", "繼續", "退出遊戲") != 0)
+                    {
+                        QuitGame();
+                        return;
+                    }
+                    continue;
+                }
+
+                SetStatus("安裝新版本");
+                AppUpdateChecker.Install(apkPath);
+                if (await AskAsync("請在系統畫面按「安裝」。\n安裝完成後重新開啟遊戲。", "重新安裝", "退出遊戲") != 0)
+                {
+                    QuitGame();
+                    return;
+                }
+            }
+        }
+#endif
+
+        private void QuitGame()
+        {
+            SetStatus("退出遊戲");
+            Application.Quit();
+        }
+
+        /// <summary>
         /// 兩包都先初始化、問出下載量，合計後一次顯示，再依序下載；全部下載完才載 dll、掛 GameAssets。
         /// 先下載完再載 dll：任一包下載失敗時還沒有任何不可逆的 Assembly.Load。
         /// </summary>
@@ -454,7 +592,8 @@ namespace EntryScene
                 codePackageLoader = null;
             }
 
-            SetStatus("初始化 CodePackage");
+            SetStatus("連線伺服器");
+            SetProgress(InitEnd * 0.3f);
             Debug.Log($"[開始載入] CodePackageRootUrl: {CodePackageRootUrl}" +
                       (CodePackageLoader.IsEditorSimulate ? "（Editor 模擬模式不使用）" : string.Empty));
             codePackageLoader = new CodePackageLoader(CodePackageRootUrl);
@@ -484,7 +623,8 @@ namespace EntryScene
                 assetPackageLoader = null;
             }
 
-            SetStatus("初始化 AssetPackage");
+            SetStatus("連線伺服器");
+            SetProgress(InitEnd * 0.65f);
             Debug.Log($"[開始載入] AssetPackageRootUrl: {AssetPackageRootUrl}" +
                       (AssetPackageLoader.IsEditorSimulate ? "（Editor 模擬模式不使用）" : string.Empty));
             assetPackageLoader = new AssetPackageLoader(AssetPackageRootUrl);
@@ -514,16 +654,18 @@ namespace EntryScene
 #else
                 : "[DownloadContent] 全部命中本地快取，不需下載");
 #endif
+            SetProgress(InitEnd);
             if (total > 0)
-                SetStatus($"下載更新：0 B / {FormatBytes(total)}");
+                SetStatus($"下載更新：0 MB / {FormatMegabytes(total)}");
 
             var lastLoggedPercent = -1;
             void Report(long downloaded)
             {
-                _progress = total > 0 ? downloaded * 1f / total : 0f;
-                _status = $"下載更新：{FormatBytes(downloaded)} / {FormatBytes(total)}";
+                var ratio = total > 0 ? Mathf.Clamp01(downloaded * 1f / total) : 0f;
+                SetProgress(Mathf.Lerp(InitEnd, DownloadEnd, ratio));
+                _ui?.SetStatus($"下載更新：{FormatMegabytes(downloaded)} / {FormatMegabytes(total)}");
                 // log 只在每跨 10% 時記一次，免得洗版。
-                var percent = (int)(_progress * 10) * 10;
+                var percent = (int)(ratio * 10) * 10;
                 if (percent != lastLoggedPercent)
                 {
                     lastLoggedPercent = percent;
@@ -538,7 +680,8 @@ namespace EntryScene
             if (updateAsset)
                 await assetPackageLoader.DownloadAsync((downloaded, _) => Report(codePackageSize + downloaded));
 
-            _progress = 0f;
+            // 沒有下載量（全部命中快取、WebGL）時這一段直接走完
+            SetProgress(DownloadEnd);
             if (total > 0)
                 Debug.Log("結束下載");
         }
@@ -550,12 +693,15 @@ namespace EntryScene
         private async UniTask LoadModuleDllsAsync()
         {
             var version = codePackageLoader.InternalVersion;
-            SetStatus("載入 AOT metadata");
+            SetStatus("載入 AOT 補充元數據");
             await LoadAotDlls();
             Debug.Log("Load AotDlls finish.");
-            SetStatus("載入模組 dll");
+            SetStatus("載入遊戲模組");
+            SetProgress(AotEnd);
+            await UniTask.Yield();
             await LoadProjectDlls();
             Debug.Log("Load ProjectDlls finish.");
+            SetProgress(ModuleEnd);
             _dllsLoadedForVersion = version;
         }
 
@@ -568,8 +714,13 @@ namespace EntryScene
             var assets = await codePackageLoader.LoadDllsAsync(
                 CodePackageLoader.AotTag, allowEmpty: CodePackageLoader.IsEditorSimulate);
             assets = assets.OrderBy(a => a.Name).ToList(); // 確保載入順序一致，方便除錯
-            foreach (var asset in assets)
+            for (var i = 0; i < assets.Count; i++)
             {
+                var asset = assets[i];
+                // 每顆一段進度＋讓畫面更新一幀（LoadMetadataForAOTAssembly 是同步的）
+                _ui?.SetStatus($"載入 AOT 補充元數據（第 {i + 1}/{assets.Count} 顆）");
+                SetProgress(Mathf.Lerp(DownloadEnd, AotEnd, (float)i / assets.Count));
+                await UniTask.Yield();
                 if (_loadedAotDlls.Contains(asset.Name))
                 {
                     Debug.Log($"[Load aot dll]: {asset.Name} 已於前次嘗試載入，略過");
@@ -709,9 +860,12 @@ namespace EntryScene
 
         private void SetStatus(string status)
         {
-            _status = status;
+            _ui?.SetStatus(status);
             Debug.Log($"[Startup] {status}");
         }
+
+        /// <summary>下載量一律用 MB 顯示（小檔也不換單位，數字才不會跳來跳去）。</summary>
+        private static string FormatMegabytes(long byteSize) => $"{byteSize / 1048576.0:0.0} MB";
 
         private static string FormatBytes(long byteSize)
         {

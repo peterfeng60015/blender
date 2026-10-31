@@ -14,6 +14,8 @@
 
 格子編號、橫向外框在格子裡的位置與九宮格邊界寫在遊戲程式 UiSkin.cs、TouchControlsView.cs；改這裡的排列要一起改。
 選單主視覺（assets.json 有 output 的素材：SsMenuBg、SsMenuHero、SsMenuLogoBg）輸出成單張 PNG，不切格。
+output 有 "dir": "entry" 的（Entry 載入畫面：EntryLoadingBg、EntryBarFrame…）輸出到 Assets/Entry/UI/<名稱>.png，
+跟主體一起打包；"symmetry" 同上面的對稱方式（九宮格外框用）。
 """
 import json
 import os
@@ -26,6 +28,7 @@ RAW = os.path.join(HERE, "out", "raw")
 PREVIEW = os.path.join(HERE, "out", "preview")
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 SPRITES = os.path.join(REPO, "Assets", "Art", "Sidescroller", "Sprites")
+ENTRY_UI = os.path.join(REPO, "Assets", "Entry", "UI")
 CELL = 256
 PPU = 64
 STROKE = (0x2A / 255, 0x0F / 255, 0x2E / 255)
@@ -252,12 +255,25 @@ def write_singles():
         else:
             if a.get("mask", True):
                 img = crop(img)
+            if out.get("trim_dark_edges"):
+                # FLUX 的寬幅背景偶爾上下帶黑邊：裁掉整列幾乎全黑的上下緣
+                lum = img[..., :3].mean(axis=(1, 2))
+                rows = np.where(lum > 0.04)[0]
+                img = img[rows[0]: rows[-1] + 1]
+            if "symmetry" in out:
+                img = symmetrize(img, out["symmetry"])
             img = resize(img, out["width"], out["height"])
         name = out["name"]
-        out_dir = os.path.join(SPRITES, name)
-        os.makedirs(out_dir, exist_ok=True)
         rgba = (np.clip(img, 0.0, 1.0) * 255 + 0.5).astype(np.uint8)
-        Image.fromarray(rgba, "RGBA").save(os.path.join(out_dir, f"{name}_Idle.png"))
+        if out.get("dir") == "entry":
+            # Entry 載入畫面：跟主體一起打包（不進 AssetPackage），檔名＝名稱；匯入設定由 EntryUiSetup 處理
+            out_dir = ENTRY_UI
+            path = os.path.join(out_dir, f"{name}.png")
+        else:
+            out_dir = os.path.join(SPRITES, name)
+            path = os.path.join(out_dir, f"{name}_Idle.png")
+        os.makedirs(out_dir, exist_ok=True)
+        Image.fromarray(rgba, "RGBA").save(path)
         print(f"{name}：{rgba.shape[1]}×{rgba.shape[0]} → {out_dir}")
 
 

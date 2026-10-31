@@ -4,7 +4,10 @@
     "references": [
         "UniTask",
         "YooAsset",
-        "HybridCLR.Runtime"
+        "HybridCLR.Runtime",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

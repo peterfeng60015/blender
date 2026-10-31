@@ -194,6 +194,82 @@
         "width": 1100,
         "height": 400
       }
+    },
+    {
+      "id": "entry_bg",
+      "model": "flux",
+      "seed": 5101,
+      "width": 1600,
+      "height": 720,
+      "mask": false,
+      "style_override": "1990s cel-shaded anime background art, flat colors with hard shading, clean dark purple linework, synthwave color palette of hot magenta, tangerine orange, deep violet and warm gold, high detail, no text, no letters, no watermark",
+      "background_override": "",
+      "prompt": "wide panoramic view of a sweltering summer city at dusk, heat haze shimmering over rooftops, distant skyscraper silhouettes, a huge orange setting sun, empty sky in the upper half, calm composition with no characters, darker toward the bottom",
+      "output": {
+        "name": "EntryLoadingBg",
+        "dir": "entry",
+        "trim_dark_edges": true,
+        "width": 1920,
+        "height": 864
+      }
+    },
+    {
+      "id": "entry_bar_frame",
+      "model": "flux",
+      "seed": 5202,
+      "width": 1024,
+      "height": 256,
+      "prompt": "UI element: a long thin horizontal empty progress bar frame, rounded capsule shape, thick deep violet outer rim with a thin hot magenta neon edge and small gold caps at both ends, the inside is an empty dark slot, front view, flat",
+      "output": {
+        "name": "EntryBarFrame",
+        "dir": "entry",
+        "symmetry": "half",
+        "width": 1024,
+        "height": 128
+      }
+    },
+    {
+      "id": "entry_bar_fill",
+      "model": "flux",
+      "seed": 5303,
+      "width": 1024,
+      "height": 256,
+      "prompt": "UI element: a long thin horizontal glossy capsule bar filled with a bright gradient from warm gold on the left to tangerine orange and hot magenta on the right, shiny white highlight stripe along the top, front view, flat",
+      "output": {
+        "name": "EntryBarFill",
+        "dir": "entry",
+        "width": 1024,
+        "height": 96
+      }
+    },
+    {
+      "id": "entry_panel",
+      "model": "flux",
+      "seed": 5404,
+      "width": 1024,
+      "height": 512,
+      "prompt": "UI element: a wide rectangular message box panel with rounded corners, dark night violet glossy interior, thick hot magenta neon border with a thin tangerine inner line, small gold rivets at the corners, front view, flat",
+      "output": {
+        "name": "EntryPanel",
+        "dir": "entry",
+        "symmetry": "quad",
+        "width": 1024,
+        "height": 512
+      }
+    },
+    {
+      "id": "entry_logo",
+      "model": "flux",
+      "seed": 5505,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "UI element: a round emblem badge showing the dark violet silhouette of a cartoon armadillo courier running with a parcel under its arm, on a glowing tangerine orange sun disc with a hot magenta rim, bold outline, front view, flat",
+      "output": {
+        "name": "EntryLogo",
+        "dir": "entry",
+        "width": 512,
+        "height": 512
+      }
     }
   ]
 }
