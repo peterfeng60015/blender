@@ -12,6 +12,8 @@ using YooAsset.Editor;
 ///   - sidescroller_sprites：Assets/Art/Sidescroller/Sprites（熱浪急件的 sprite sheet）。
 ///   - sidescroller_data：Assets/Art/Sidescroller/Data（演出腳本、關卡資料；Cutscenes、Levels 各一包）。
 ///   - sidescroller_models：Assets/Art/Sidescroller/Models（3D 模型與動畫控制器；材質、shader 跟著依賴收進去）。
+///   - sidescroller_atlases：Assets/Art/Sidescroller/Atlases（Sprite Atlas，SsAtlasSetup 產生；sheet 照舊各自一包，
+///     打包時 TrackSpriteAtlasDependencies 讓它們依賴圖集那一包）。
 ///   - PackTopDirectory：底下每個子資料夾一包（SsHeroDay、Cutscenes…），改一個只會重下那一包。
 ///   - AddressByFileName：定位地址＝檔名不含副檔名（SsHeroDay_Run、SsHeroDay_Run_n、SsLevel_Stage1）。
 ///   - CollectAll：png（主圖與法線圖 _n，各自是獨立的 sprite 貼圖）、json、txt、fbx、controller 都收。
@@ -37,6 +39,7 @@ public static class AssetPackageCollectorSetup
     public const string SidescrollerSpritesCollectPath = "Assets/Art/Sidescroller/Sprites";
     public const string SidescrollerDataCollectPath = "Assets/Art/Sidescroller/Data";
     public const string SidescrollerModelsCollectPath = "Assets/Art/Sidescroller/Models";
+    public const string SidescrollerAtlasesCollectPath = SsAtlasSetup.AtlasRoot;
 
     // 與 CodePackageCollectorSetup 同一份設定檔（專案內只能有一份）。
     private const string SettingAssetPath = "Assets/BundleCollectorSetting.asset";
@@ -78,6 +81,15 @@ public static class AssetPackageCollectorSetup
             CollectPath = SidescrollerDataCollectPath,
             Optional = false,
             RequiredFilePrefix = "Ss",
+        },
+        new GroupSpec
+        {
+            GroupName = "sidescroller_atlases",
+            GroupDesc = "每個 <Name> 子資料夾一包（Ss 開頭；Sprite Atlas，由 SsAtlasSetup 產生）",
+            CollectPath = SidescrollerAtlasesCollectPath,
+            Optional = false,
+            RequiredFilePrefix = "Ss",
+            FolderNeedsPrefix = true,
         },
         new GroupSpec
         {

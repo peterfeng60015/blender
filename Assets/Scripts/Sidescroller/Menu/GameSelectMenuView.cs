@@ -21,7 +21,11 @@ namespace Sidescroller
         /// <summary>選單列出的遊戲（依序）。目前只有《熱浪急件》；新增遊戲時在 <see cref="GameSelectMenu"/> 加選項常數並列在這裡。</summary>
         private static readonly int[] Choices = { GameSelectMenu.ChoiceSidescroller };
 
-        private const float LoadTimeout = 4f;
+        /// <summary>
+        /// 等素材的上限。手機（雷電模擬器實測）讀 53 張 sheet＋3D 主角約 4.5 秒，留餘裕；
+        /// 超過就先用純色建畫面，素材之後到了再重建一次（<see cref="RebuildWithArtIfReady"/>）。
+        /// </summary>
+        private const float LoadTimeout = 10f;
         /// <summary>選單專用素材（交了才用）：背景主視覺取代城市視差、主角主視覺放右邊。</summary>
         private const string MenuBgLocation = "SsMenuBg_Idle";
         private const string MenuHeroLocation = "SsMenuHero_Idle";
@@ -50,7 +54,11 @@ namespace Sidescroller
         private bool _useArt = true;
         private bool _buildTried;
         private bool _built;
+        /// <summary>建畫面當下素材已經讀完：false 表示是逾時先建的純色版，素材到了要重建。</summary>
+        private bool _builtWithArt;
         private string _pendingError;
+        /// <summary>目前顯示的錯誤訊息，重建畫面時補回去。</summary>
+        private string _shownError;
         private float _time;
         private bool _listOpened;
 
@@ -99,6 +107,7 @@ namespace Sidescroller
                 _pendingError = error;
                 return;
             }
+            _shownError = error;
             var show = !string.IsNullOrEmpty(error);
             _error.gameObject.SetActive(show);
             if (show)
@@ -313,12 +322,40 @@ namespace Sidescroller
 
             _rotate = new RotateHintView(root, _font, null);
             _built = true;
+            _builtWithArt = _useArt && SsArt.IsLoaded;
             Debug.Log("[Sidescroller.GameSelectMenu] 選單畫面建好，播進場動畫");
             SetError(_pendingError);
             _pendingError = null;
         }
 
-        private static string HintText() => SsInput.TouchActive ? StoryTexts.MenuHintTouch : StoryTexts.MenuHint;
+        /// <summary>
+        /// 逾時先建了純色版、之後素材才讀完：拆掉重建有素材的版面，進場動畫重播一次。
+        /// 已經選了遊戲就不動（畫面馬上要關）。
+        /// </summary>
+        private void RebuildWithArtIfReady()
+        {
+            if (_builtWithArt || !_useArt || _chosen || !_loadDone || !SsArt.IsLoaded)
+                return;
+            Debug.Log($"[Sidescroller.GameSelectMenu] 素材 {Time.realtimeSinceStartup - _loadStart:0.00} 秒才讀完，重建選單畫面");
+            Teardown();
+            _time = 0f;
+            _listOpened = false;
+            _pendingError = _shownError;
+            try
+            {
+                Build();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+                Debug.LogError("[Sidescroller.GameSelectMenu] 重建選單畫面失敗，改用不含素材的簡易版面");
+                Teardown();
+                _useArt = false;
+                Build();
+            }
+        }
+
+        private static string HintText() =>SsInput.TouchActive ? StoryTexts.MenuHintTouch : StoryTexts.MenuHint;
 
         /// <summary>只有一款遊戲時選項寫「開始遊戲」（Logo 已經是遊戲名稱）；多款時列遊戲名稱。</summary>
         private static string[] Labels()
@@ -337,6 +374,7 @@ namespace Sidescroller
                 TickLoading();
             if (!_built)
                 return;
+            RebuildWithArtIfReady();
             SsUiKit.FitSafeArea(_safe);
             _time += dt;
             Animate(dt);

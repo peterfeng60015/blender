@@ -119,78 +119,48 @@ namespace Sidescroller
         public static bool HasHero3D => HeroModel != null && HeroAnimController != null;
 
         #region 公開 API
-        /// <summary>依 §6.4 的清單讀全部 sprite；讀不到的用佔位圖。重複呼叫只讀一次。</summary>
+        /// <summary>
+        /// 依 §6.4 的清單讀全部 sprite；讀不到的用佔位圖。重複呼叫只讀一次。
+        /// 清單上的每一項與 3D 主角同時讀（一張一張 await 時，手機上 53 張 sheet 要 4.5 秒）。
+        /// </summary>
         public static async UniTask LoadAllAsync(CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
             if (IsLoaded)
                 return;
             var generation = _generation;
-            var loaded = new Dictionary<string, SpriteSet>();
-            var placeholders = 0;
+            var started = Time.realtimeSinceStartup;
             var ready = IsGameAssetsReady();
             if (!ready)
                 Debug.LogWarning("[Sidescroller.SsArt] EntryScene.GameAssets 尚未就緒（沒從 Entry 場景按 Play？）");
 
-            foreach (var entry in Catalog)
-            {
-                var fps = 0f;
-                var json = entry.HasManifest ? await TryLoadTextAsync(entry.Name + "_sprites", ready, generation, ct) : null;
-                if (generation != _generation)
-                    throw new OperationCanceledException("[Sidescroller.SsArt] 讀取中途被 ResetCache");
-                if (json != null)
-                    fps = ParseFps(json);
-
-                for (var i = 0; i < entry.Actions.Length; i++)
-                {
-                    var location = $"{entry.Name}_{entry.Actions[i]}";
-                    var sprites = await TryLoadSpritesAsync(location, ready, generation, ct);
-                    if (generation != _generation)
-                        throw new OperationCanceledException("[Sidescroller.SsArt] 讀取中途被 ResetCache");
-                    SpriteSet set;
-                    if (sprites != null && sprites.Length > 0)
-                    {
-                        if (sprites.Length != entry.Frames[i])
-                            Debug.LogWarning($"[Sidescroller.SsArt] {location} 有 {sprites.Length} 幀，清單是 {entry.Frames[i]} 幀（以實際為準）");
-                        set = new SpriteSet(location, sprites, fps, false);
-                    }
-                    else
-                    {
-                        set = CreatePlaceholder(entry, i, location);
-                        placeholders++;
-                    }
-                    loaded[location] = set;
-                }
-            }
-
-            GameObject heroModel = null;
-            RuntimeAnimatorController heroAnim = null;
-            try
-            {
-                heroModel = await LoadHeroModelAsync(ready, ct);
-                heroAnim = await LoadHeroAnimAsync(ready, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                // 舊版 App（Entry 還沒有 LoadModelAsync）會在這裡丟 MissingMethodException：照樣用 sprite 主角
-                Debug.LogWarning($"[Sidescroller.SsArt] 讀不到 3D 主角，改用 sprite：{ex.Message}");
-            }
+            var entryTasks = new UniTask<List<SpriteSet>>[Catalog.Length];
+            for (var i = 0; i < Catalog.Length; i++)
+                entryTasks[i] = LoadEntryAsync(Catalog[i], ready, generation, ct);
+            var (entrySets, hero) = await UniTask.WhenAll(UniTask.WhenAll(entryTasks), LoadHeroAsync(ready, ct));
 
             if (generation != _generation)
                 throw new OperationCanceledException("[Sidescroller.SsArt] 讀取中途被 ResetCache");
-            HeroModel = heroModel;
-            HeroAnimController = heroAnim;
+            HeroModel = hero.Model;
+            HeroAnimController = hero.Anim;
             if (!HasHero3D)
                 Debug.LogWarning("[Sidescroller.SsArt] 3D 主角素材不齊，主角用 sprite");
-            foreach (var pair in loaded)
-                Cache[pair.Key] = pair.Value;
+            var count = 0;
+            var placeholders = 0;
+            foreach (var sets in entrySets)
+            {
+                foreach (var set in sets)
+                {
+                    Cache[set.Location] = set;
+                    count++;
+                    if (set.IsPlaceholder)
+                        placeholders++;
+                }
+            }
             PlaceholderCount = placeholders;
             IsLoaded = true;
-            Debug.Log($"[Sidescroller.SsArt] 素材讀取完成，{loaded.Count} 張 sheet，其中佔位圖 {placeholders} 張");
+            Debug.Log($"[Sidescroller.SsArt] 素材讀取完成，{count} 張 sheet，其中佔位圖 {placeholders} 張，" +
+                      $"耗時 {Time.realtimeSinceStartup - started:0.00} 秒");
         }
 
         /// <summary>"{Name}_{Action}"；清單外或未讀完：回傳佔位圖並記警告。</summary>
@@ -281,6 +251,64 @@ namespace Sidescroller
             {
                 Debug.LogWarning($"[Sidescroller.SsArt] 查詢 GameAssets.IsReady 失敗：{ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>清單上的一項：先讀 json 取 fps，再同時讀它的每個動作；讀不到的動作用佔位圖。</summary>
+        private static async UniTask<List<SpriteSet>> LoadEntryAsync(Entry entry, bool ready, int generation, CancellationToken ct)
+        {
+            var fps = 0f;
+            var json = entry.HasManifest ? await TryLoadTextAsync(entry.Name + "_sprites", ready, generation, ct) : null;
+            if (generation != _generation)
+                throw new OperationCanceledException("[Sidescroller.SsArt] 讀取中途被 ResetCache");
+            if (json != null)
+                fps = ParseFps(json);
+
+            var locations = new string[entry.Actions.Length];
+            var loads = new UniTask<Sprite[]>[entry.Actions.Length];
+            for (var i = 0; i < entry.Actions.Length; i++)
+            {
+                locations[i] = $"{entry.Name}_{entry.Actions[i]}";
+                loads[i] = TryLoadSpritesAsync(locations[i], ready, generation, ct);
+            }
+            var results = await UniTask.WhenAll(loads);
+            if (generation != _generation)
+                throw new OperationCanceledException("[Sidescroller.SsArt] 讀取中途被 ResetCache");
+
+            var sets = new List<SpriteSet>(results.Length);
+            for (var i = 0; i < results.Length; i++)
+            {
+                var sprites = results[i];
+                if (sprites != null && sprites.Length > 0)
+                {
+                    if (sprites.Length != entry.Frames[i])
+                        Debug.LogWarning($"[Sidescroller.SsArt] {locations[i]} 有 {sprites.Length} 幀，清單是 {entry.Frames[i]} 幀（以實際為準）");
+                    sets.Add(new SpriteSet(locations[i], sprites, fps, false));
+                }
+                else
+                {
+                    sets.Add(CreatePlaceholder(entry, i, locations[i]));
+                }
+            }
+            return sets;
+        }
+
+        /// <summary>3D 主角的模型與動畫控制器同時讀；讀不到的回 null（主角改用 sprite）。</summary>
+        private static async UniTask<(GameObject Model, RuntimeAnimatorController Anim)> LoadHeroAsync(bool ready, CancellationToken ct)
+        {
+            try
+            {
+                return await UniTask.WhenAll(LoadHeroModelAsync(ready, ct), LoadHeroAnimAsync(ready, ct));
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // 舊版 App（Entry 還沒有 LoadModelAsync）會在這裡丟 MissingMethodException：照樣用 sprite 主角
+                Debug.LogWarning($"[Sidescroller.SsArt] 讀不到 3D 主角，改用 sprite：{ex.Message}");
+                return (null, null);
             }
         }
 

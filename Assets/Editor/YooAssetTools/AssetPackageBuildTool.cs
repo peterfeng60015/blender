@@ -165,6 +165,8 @@ public static class AssetPackageBuildTool
             CompressOption = ECompressOption.LZ4,
             ClearBuildCacheFiles = false,
             UseAssetDependencyDB = true,
+            // sprite 收進 Sprite Atlas 後，貼圖在圖集那一包：讓引用圖集的 bundle 在清單裡依賴它（見 SsAtlasSetup）
+            TrackSpriteAtlasDependencies = true,
             // 不加密
             BundleEncryptor = null,
             // 與自動收集的 shader 包同名（同 YooAsset 建置視窗 ScriptableBuildPipelineViewer.GetBuiltinShaderBundleName）

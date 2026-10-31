@@ -83,6 +83,20 @@ MonoBehaviour:
         FilterRuleName: CollectAll
         AssetTags: 
         UserData: 
+    - GroupName: sidescroller_atlases
+      GroupDesc: "\u6BCF\u500B <Name> \u5B50\u8CC7\u6599\u593E\u4E00\u5305\uFF08Ss
+        \u958B\u982D\uFF1BSprite Atlas\uFF0C\u7531 SsAtlasSetup \u7522\u751F\uFF09"
+      AssetTags: 
+      ActiveRuleName: EnableGroup
+      Collectors:
+      - CollectPath: Assets/Art/Sidescroller/Atlases
+        CollectorGUID: 
+        CollectorType: 0
+        AddressRuleName: AddressByFileName
+        PackRuleName: PackTopDirectory
+        FilterRuleName: CollectAll
+        AssetTags: 
+        UserData: 
     - GroupName: sidescroller_models
       GroupDesc: "\u6BCF\u500B <Name> \u5B50\u8CC7\u6599\u593E\u4E00\u5305\uFF08Ss
         \u958B\u982D\uFF1B3D \u6A21\u578B\u8207\u52D5\u756B\u63A7\u5236\u5668\uFF09"
